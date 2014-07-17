@@ -130,7 +130,7 @@ def intergolate(x_bin_edges,xin,yin):
     #make a single-point interpolations function, mainly for readability
     interp = lambda x0,y0,x1,y1,x: (y1-y0)/(x1-x0)*(x-x0) + y0    
     
-    #define variables to stor the indices of the points just right of the left
+    #define variables to store the indices of the points just right of the left
     #and right edges of the bins, respectively
     i0, i1 = 0, 0
     yout = zeros(len(xbe)-1)
@@ -160,3 +160,37 @@ def chunks(l, n):
     """
     for i in xrange(0, len(l), n):
         yield l[i:i+n]
+        
+def polyfit_binned(bins, y, yerr, order):
+    """Generates a function for the maximum likelihood fit to a set of binned
+    data.
+    
+    bins = [[a0, b0], ..., [aM, bM]] are the bin edges
+    y = data, the integral of some value over the bins
+    
+    return a function that evaluates y and yerr when given a new bin using the
+    maximum likelihood model fit
+    """
+    N, M = order, len(y)
+    
+    #some prelim calcs. all matrices are NxM
+    a, b = np.array(bn[0] for bn in bins), np.array(bn[1] for bn in bins)
+    apow = np.array([a**(n+1) for n in range(N+1)])
+    bpow = np.array([b**(n+1) for n in range(N+1)])
+    ymat = np.array([y]*(N+1))
+    bap = bpow - apow
+    var = np.array([np.array(yerr)**2]*(N+1))
+    
+    #build the RHS vector
+    rhs = np.sum(ymat*bap/var, 1)
+    
+    #build the coefficient matrix
+    nmat = bap/var #NxM (n,m)
+    kmat = np.transpose(bap)*np.transpose([np.ones(M)*(k+1) for k in range(N+1)]) #MxN (m,k)
+    coeffs = np.dot(nmat,kmat)
+    
+    #solve for the coefficients
+    c = np.linalg.solve(coeffs, rhs)
+    
+    #compute the covariance matrix
+    

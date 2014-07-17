@@ -7,7 +7,7 @@ Created on Fri Jun 13 15:33:34 2014
 
 from astropy.io import fits
 
-def filterFITSfiles(files, criteria):
+def filterfiles(files, criteria):
     """Rerturns only the files from filelist that match the criteria.
     
     The criteria should be a list of (unit,keyword,function) where the function
@@ -30,12 +30,13 @@ def filterFITSfiles(files, criteria):
                     
     return outfiles
                 
-def sortFITSfiles(files, sortby='EXPSTART', hdu=1):
+def sortfiles(files, sortby='EXPSTART', hdu=1):
     """Order the fits files by a specific keyword value from the header.
     Currently only works for one level of sorting because I haven't yet needed
     to sort with more than one level of heirarchy.
     """
-    keyvalues = [fits.getval(f,orderby,hdu) for f in files]
+    keyvalues = [fits.getval(f,sortby,hdu) for f in files]
     fkey = zip(files, keyvalues)
     fkey.sort(key=lambda x: x[1])
     return [f[0] for f in fkey]
+    
