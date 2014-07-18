@@ -168,29 +168,55 @@ def polyfit_binned(bins, y, yerr, order):
     bins = [[a0, b0], ..., [aM, bM]] are the bin edges
     y = data, the integral of some value over the bins
     
-    return a function that evaluates y and yerr when given a new bin using the
-    maximum likelihood model fit
+    return the coefficents of the polynomial ([c0, c1, .. cN]) where N=order
+    the covariance matrix (!! not sigma, but sigma**2), and a function that 
+    evaluates y and yerr when given a new bin using the maximum likelihood 
+    model fit
     """
     N, M = order, len(y)
+    if type(yerr) in [int,float]: yerr = yerr*np.ones(M)
     
-    #some prelim calcs. all matrices are NxM
-    a, b = np.array(bn[0] for bn in bins), np.array(bn[1] for bn in bins)
-    apow = np.array([a**(n+1) for n in range(N+1)])
-    bpow = np.array([b**(n+1) for n in range(N+1)])
-    ymat = np.array([y]*(N+1))
-    bap = bpow - apow
+    #some prelim calcs. all matrices are (N+1)xM
+    def prelim(bins, M):
+        a, b = np.array([bn[0] for bn in bins]), np.array([bn[1] for bn in bins])
+        apow = np.array([a**(n+1) for n in range(N+1)])
+        bpow = np.array([b**(n+1) for n in range(N+1)])
+        bap = bpow - apow
+        frac = np.array([np.ones(M)/(n+1) for n in range(N+1)])
+        return bap, frac
+    bap, frac = prelim(bins, M)
     var = np.array([np.array(yerr)**2]*(N+1))
+    ymat = np.array([y]*(N+1))
     
     #build the RHS vector
     rhs = np.sum(ymat*bap/var, 1)
     
-    #build the coefficient matrix
-    nmat = bap/var #NxM (n,m)
-    kmat = np.transpose(bap)*np.transpose([np.ones(M)*(k+1) for k in range(N+1)]) #MxN (m,k)
-    coeffs = np.dot(nmat,kmat)
+    #build the LHS coefficient matrix
+    nmat = bap/var #N+1xM (n,m)
+    kmat = np.transpose(bap)*np.transpose(frac) #MxN+1 (m,k)
+    lhs = np.dot(nmat,kmat)
     
-    #solve for the coefficients
-    c = np.linalg.solve(coeffs, rhs)
+    #solve for the polynomial coefficients
+    c = np.linalg.solve(lhs, rhs)
     
-    #compute the covariance matrix
+    #compute the inverse covariance matrix (same as Hessian)
+    H = np.dot(nmat*frac,kmat)
+    cov = np.linalg.inv(H)
     
+    #construct the function to compute model values and errors
+    def f(bins):
+        M = len(bins)
+        bap, frac = prelim(bins, M)
+        
+        #values
+        cmat = np.transpose([c]*M)
+        y = np.sum(bap*cmat*frac, 0)
+        
+        #errors
+        T = bap*frac
+        yvar = np.dot(np.transpose(T), np.dot(cov, T))
+        yerr = np.sqrt(np.diagonal(yvar))
+            
+        return y, yerr
+        
+    return c, cov, f
