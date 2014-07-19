@@ -29,8 +29,7 @@ def divvy(ary, bins, keyrow=0):
     faster.
     """
     if type(ary) != np.ndarray: ary = np.array(ary)
-    if ary.ndim == 1: ary.resize([1,len(ary)])
-    pdb.set_trace()     
+    if ary.ndim == 1: ary.resize([1,len(ary)])    
     ivec = np.digitize(ary[keyrow,:], bins)
     divvied = [ary[:, ivec == i] for i in np.arange(1,len(bins))]
     return divvied        
@@ -178,7 +177,8 @@ def polyfit_binned(bins, y, yerr, order):
     
     #some prelim calcs. all matrices are (N+1)xM
     def prelim(bins, M):
-        a, b = np.array([bn[0] for bn in bins]), np.array([bn[1] for bn in bins])
+        bins = np.array(bins)
+        a, b = bins[:,0], bins[:,1.]
         apow = np.array([a**(n+1) for n in range(N+1)])
         bpow = np.array([b**(n+1) for n in range(N+1)])
         bap = bpow - apow
