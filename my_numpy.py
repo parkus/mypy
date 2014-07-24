@@ -7,13 +7,18 @@ Created on Wed Apr 30 11:43:52 2014
 import numpy as np
 import pdb
 
-def midpts(vec):
+def midpts(ary, axis=None):
     """Computes the midpoints between points in a vector.
     
     Output has length len(vec)-1.
     """
-    return (vec[1:] + vec[:-1])/2.0
-
+    if axis == None:
+        return (ary[1:] + ary[:-1])/2.0
+    else:
+        hi = np.split(ary, [1], axis=axis)[1]
+        lo = np.split(ary, [-1], axis=axis)[0]
+        return (hi+lo)/2.0
+        
 def divvy(ary, bins, keyrow=0):
     """Divvys up the points in the input vector or array into the indicated 
     bins.

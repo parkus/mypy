@@ -97,3 +97,15 @@ def pcolor_reg(x, y, z, **kw):
                aspect='auto',
                **kw)
     plt.axis('tight')
+    
+def errorpoly(x, y, yerr, fmt=None, ecolor=None, ealpha=0.5, **kw):
+    p = plt.plot(x,y,fmt, **kw)
+    if len(yerr.shape) == 2:
+        ylo = y - yerr[0,:]
+        yhi = y + yerr[1,:]
+    else:
+        ylo, yhi = y - yerr, y + yerr
+    if ecolor == None: ecolor = p[0].get_color()
+    f = plt.fill_between(x,ylo,yhi,color=ecolor,alpha=ealpha)
+    return p[0],f
+    
