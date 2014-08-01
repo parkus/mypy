@@ -225,3 +225,11 @@ def polyfit_binned(bins, y, yerr, order):
         return y, yerr
         
     return c, cov, f
+    
+def argextrema(y):
+    delta = y[1:] - y[:-1]
+    pos_neg = delta//abs(delta)
+    curve_sign = pos_neg[1:] - pos_neg[:-1]
+    argmax = np.nonzero(curve_sign < 0)[0] + 1
+    argmin = np.nonzero(curve_sign > 0)[0] + 1
+    return argmin,argmax
