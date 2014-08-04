@@ -261,45 +261,36 @@ def emd(t,y,Nmodes=None):
                 if var < 0.25:
                     c.append(h)
                     r = r - h
+                    if len(c) == Nmodes:
+                        return c, r
                     h = r
                     break
                 hold = h
         except ValueError: #if the residue is has too few extrema
             return c, r
-        if len(c) == Nmodes:
-            return c, r
+        
         
 def sift(t,y):
     #identify the relative extrema
     argmin, argmax = argextrema(y)
     
     #if there are less than two extrema, raise an exception
-    if len(argmin) < 2 or len(argmax) < 2:
+    if len(argmin) + len(argmax) < 2:
         raise ValueError('Fewer than two extrema in the series -- cannot sift.')
     
-    #function to extrapolate points based on line fit to two points in ti,yi
-    def extend(ti,yi,t):
-            slope = (yi[1] - yi[0])/(ti[1] - ti[0])
-            return yi[0] + slope*(t-ti[0])
-    
+    #create splines
     def spline(i):
-        fit = np.zeros(t.shape)
-        core_spline = interp1d(t[i],y[i], kind='cubic')
-        left, right = t < t[i[0]], t > t[i[-1]] #use this over digitize bc need > not >=
-        mid = np.logical_not(np.logical_or(left,right))
-        left,mid,right = [np.nonzero(v)[0] for v in [left,mid,right]]
-        
-        #use the spline for the points in the range of t[i]
-        fit[mid] = core_spline(t[mid])
-        
-        #use slope at spline ends to extrapolate for points outside of t[i]
-        fit[left] = extend(t[mid[:2]], fit[mid[:2]], t[left])
-        fit[right] = extend(t[mid[-2:]], fit[mid[-2:]], t[right])
-        return fit
+        #reflect the first/last extrema at the beginning/end of the series
+        tbeg,tend = t[0] + (t[0] - t[i[0]]), t[-1] + (t[-1] - t[i[-1]])
+        text = np.concatenate([[tbeg],t[i],[tend]])
+        yext = np.concatenate([[y[i[0]]],y[i],[y[i[-1]]]])
+        #create spline function
+        spline = interp1d(text,yext,'cubic')
+        return spline
     
-    fit_min, fit_max = map(spline, [argmin,argmax])
+    spline_min, spline_max = map(spline, [argmin,argmax])
     
     #compute mean
-    m = (fit_min + fit_max)/2.0
+    m = (spline_min(t) + spline_max(t))/2.0
     h = y - m
     return h
