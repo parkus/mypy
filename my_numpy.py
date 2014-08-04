@@ -5,6 +5,7 @@ Created on Wed Apr 30 11:43:52 2014
 @author: Parke
 """
 import numpy as np
+from scipy.interpolate import interp1d
 import pdb
 
 def midpts(ary, axis=None):
@@ -227,9 +228,65 @@ def polyfit_binned(bins, y, yerr, order):
     return c, cov, f
     
 def argextrema(y):
+    """Returns the indices of the local extrema of a series. When consecutive 
+    points at an extreme have the same value, the index of the first is
+    returned.
+    """
     delta = y[1:] - y[:-1]
     pos_neg = delta//abs(delta)
     curve_sign = pos_neg[1:] - pos_neg[:-1]
     argmax = np.nonzero(curve_sign < 0)[0] + 1
     argmin = np.nonzero(curve_sign > 0)[0] + 1
     return argmin,argmax
+    
+def emd(t,y,Nmodes=None):
+    """Decompose function into "intrinsic modes" using empirical mode
+    decompisition.
+    
+    From Huang et al. (1998; RSPA 454:903)
+    """
+    c = []
+    hold, h, r = [y]*3
+    while True:
+        try:
+            while True:
+                h = sift(t,h)
+                var = np.sum((h-hold)**2/hold**2)
+                if var < 0.25:
+                    c.append(h)
+                    r = r - h
+                    h = r
+                    break
+                hold = h
+        except ValueError: #if the residue is has too few extrema
+            return c, r
+        if len(c) == Nmodes:
+            return c, r
+        
+def sift(t,y):
+    #identify the relative extrema
+    argmin, argmax = argextrema(y)
+    
+    #if there are less than two extrema, raise an exception
+    if len(argmin) + len(argmax) < 2:
+        raise ValueError('Fewer than two extrema in the series -- cannot sift.')
+    
+    #create splines
+    def spline(i,j):
+        #reflect the first/last extrema at the beginning/end of the series
+        #about an origin defined by the first/last point
+        reflect = lambda x0,y0,x,y: (x0-x, y0-y)
+        tbeg,ybeg = reflect(t[0],y[0],t[j[0]],y[j[0]])
+        tend,yend = reflect(t[-1],y[-1],t[j[-1]],y[j[-1]])
+        text = np.concatenate([tbeg,t,tend])
+        yext = np.concatenate([ybeg,y,yend])
+        #create spline function
+        spline = interp1d(text,yext,'cubic')
+        return spline
+    
+    spline_min, spline_max = map(spline, [argmin,argmax], [argmax,argmin])
+    
+    #compute mean
+    m = (spline_min(t) + spline_max(t))/2.0
+    h = y - m
+    return h
