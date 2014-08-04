@@ -5,7 +5,7 @@ Created on Wed Apr 30 11:43:52 2014
 @author: Parke
 """
 import numpy as np
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pchip_interpolate
 import pdb
 
 def midpts(ary, axis=None):
@@ -34,10 +34,16 @@ def divvy(ary, bins, keyrow=0):
     the vector that were in the bin at each iteration and this was slightly
     faster.
     """
-    if type(ary) != np.ndarray: ary = np.array(ary)
+    list_in, ashape = (type(ary) == list), ary.shape
+    if list_in: ary = np.array(ary)
     if ary.ndim == 1: ary.resize([1,len(ary)])    
     ivec = np.digitize(ary[keyrow,:], bins)
     divvied = [ary[:, ivec == i] for i in np.arange(1,len(bins))]
+    
+    #return ary to it's original form
+    if list_in: ary = list(ary)
+    if len(ashape) == 1: ary.resize(ashape)
+    
     return divvied        
 
 def chunkogram(vec, chunksize, weights=None, unsorted=False):
@@ -268,25 +274,32 @@ def sift(t,y):
     argmin, argmax = argextrema(y)
     
     #if there are less than two extrema, raise an exception
-    if len(argmin) + len(argmax) < 2:
+    if len(argmin) < 2 or len(argmax) < 2:
         raise ValueError('Fewer than two extrema in the series -- cannot sift.')
     
-    #create splines
-    def spline(i,j):
-        #reflect the first/last extrema at the beginning/end of the series
-        #about an origin defined by the first/last point
-        reflect = lambda x0,y0,x,y: (x0-x, y0-y)
-        tbeg,ybeg = reflect(t[0],y[0],t[j[0]],y[j[0]])
-        tend,yend = reflect(t[-1],y[-1],t[j[-1]],y[j[-1]])
-        text = np.concatenate([tbeg,t,tend])
-        yext = np.concatenate([ybeg,y,yend])
-        #create spline function
-        spline = interp1d(text,yext,'cubic')
-        return spline
+    #function to extrapolate points based on line fit to two points in ti,yi
+    def extend(ti,yi,t):
+            slope = (yi[1] - yi[0])/(ti[1] - ti[0])
+            return yi[0] + slope*(t-ti[0])
     
-    spline_min, spline_max = map(spline, [argmin,argmax], [argmax,argmin])
+    def spline(i):
+        fit = np.zeros(t.shape)
+        core_spline = interp1d(t[i],y[i], kind='cubic')
+        left, right = t < t[i[0]], t > t[i[-1]] #use this over digitize bc need > not >=
+        mid = np.logical_not(np.logical_or(left,right))
+        left,mid,right = [np.nonzero(v)[0] for v in [left,mid,right]]
+        
+        #use the spline for the points in the range of t[i]
+        fit[mid] = core_spline(t[mid])
+        
+        #use slope at spline ends to extrapolate for points outside of t[i]
+        fit[left] = extend(t[mid[:2]], fit[mid[:2]], t[left])
+        fit[right] = extend(t[mid[-2:]], fit[mid[-2:]], t[right])
+        return fit
+    
+    fit_min, fit_max = map(spline, [argmin,argmax])
     
     #compute mean
-    m = (spline_min(t) + spline_max(t))/2.0
+    m = (fit_min + fit_max)/2.0
     h = y - m
     return h
