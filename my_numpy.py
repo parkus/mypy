@@ -7,6 +7,7 @@ Created on Wed Apr 30 11:43:52 2014
 import numpy as np
 from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pchip_interpolate
 import pdb
+import matplotlib.pyplot as plt
 
 def midpts(ary, axis=None):
     """Computes the midpoints between points in a vector.
@@ -251,24 +252,79 @@ def emd(t,y,Nmodes=None):
     
     From Huang et al. (1998; RSPA 454:903)
     """
+    pdb.set_trace()
     c = []
-    hold, h, r = [y]*3
+    h, r = [y]*2
+    hold = np.zeros(y.shape)
     while True:
         try:
             while True:
-                h = sift(t,h)
+                h = mnp.sift2(t,h)
                 var = np.sum((h-hold)**2/hold**2)
                 if var < 0.25:
                     c.append(h)
                     r = r - h
                     if len(c) == Nmodes:
-                        return c, r
+                        pdb.set_trace()
                     h = r
+                    hold = np.zeros(y.shape)
                     break
                 hold = h
         except ValueError: #if the residue is has too few extrema
             return c, r
+   
+def sift2(t,y):
+    #identify the relative extrema
+    argmin, argmax = argextrema(y)
+    
+    #if there are less than three extrema, raise an exception
+    if len(argmin) + len(argmax) < 3:
+        raise ValueError('Fewer than three extrema in the series -- cannot sift.')
+    
+    #function to mirror nearest two extrema about the end
+    def reflect(i):
+        #parse out the end and extrema points
+        [tend,yend],[tmin,ymin],[tmax,ymax] = [[t[ii],y[ii]] for ii in 
+                                               [i,argmin[i],argmax[i]]]
         
+        #mirror the points about the end if it is outside of the two extrema
+        #else mirror about the extremum nearest the end
+        if yend > ymax or yend < ymin: #if the end is outside the relative extrema
+            taxis = tend
+        else:
+            i2 = i+1 if i >= 0 else i-1 #second index from end (+1 if left, -1 right)
+            if abs(tmin-tend) < abs(tmax-tend): #if min is closest to the end
+                taxis = tmin
+                ii = argmin[i2]
+                tmin, ymin = t[ii], y[ii]
+            else:
+                taxis = tmax
+                ii = argmax[i2]
+                tmax, ymax = t[ii], y[ii]
+            
+        tmirrored = [taxis + (taxis - tmin), taxis + (taxis - tmax)]
+        ymirrored = [ymin,ymax]
+        return tmirrored, ymirrored
+    
+    #get the mirrored times and construct the vectors with extended ends
+    [tleft, yleft], [tright, yright] = map(reflect, [0,-1])
+    tmin, tmax, ymin, ymax = map(np.concatenate, ([[tleft[0]], t[argmin], [tright[0]]],
+                                                  [[tleft[1]], t[argmax], [tright[1]]],
+                                                  [[yleft[0]], y[argmin], [yright[0]]],
+                                                  [[yleft[1]], y[argmax], [yright[1]]]))
+    
+    #compute spline enevlopes and mean
+    spline_min, spline_max = map(interp1d, [tmin,tmax], [ymin,ymax], ['cubic']*2)
+    m = (spline_min(t) + spline_max(t))/2.0
+    h = y - m
+    
+    plt.plot(t,y,'-',t,m,'-')
+    plt.plot(tmin,ymin,'k.',tmax,ymax,'k.')
+    tmin = np.linspace(tmin[0],tmin[-1],1000)
+    tmax = np.linspace(tmax[0],tmax[-1],1000)
+    plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
+    
+    return h
         
 def sift(t,y):
     #identify the relative extrema
@@ -281,6 +337,8 @@ def sift(t,y):
     #create splines
     def spline(i):
         #reflect the first/last extrema at the beginning/end of the series
+        #note that attemping a fixed-slope end condition gave divergent results
+        #on simulated noisy data
         tbeg,tend = t[0] + (t[0] - t[i[0]]), t[-1] + (t[-1] - t[i[-1]])
         text = np.concatenate([[tbeg],t[i],[tend]])
         yext = np.concatenate([[y[i[0]]],y[i],[y[i[-1]]]])
