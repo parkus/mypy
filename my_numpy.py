@@ -14,6 +14,7 @@ def midpts(ary, axis=None):
     
     Output has length len(vec)-1.
     """
+    if type(ary) != np.ndarray: ary = np.array(ary)
     if axis == None:
         return (ary[1:] + ary[:-1])/2.0
     else:
@@ -82,7 +83,7 @@ def chunkogram(vec, chunksize, weights=None, unsorted=False):
     This will take a lot longer than regular chunk_edges, so don't use it
     if all the values in the vector are unique.
     """
-    v = np.sort(vec) if unsorted else v = vec
+    v = np.sort(vec) if unsorted else vec
     wtd = weights != None
     
     edges, count = [(v[0] + v[1])/2.0], []
@@ -113,7 +114,7 @@ def chunk_edges(vec, chunksize, unsorted=False):
     points, tacking pretend points on both ends of the input vector can
     accomodate the situation.
     """
-    v = np.sort(vec) if unsorted else v = vec
+    v = np.sort(vec) if unsorted else vec
         
     #use indices bc if len(vec) % chunksize == 0 there will be a point left of
     #the last bin edges, but not right of it
@@ -211,7 +212,7 @@ def polyfit_binned(bins, y, yerr, order):
     #some prelim calcs. all matrices are (N+1)xM
     def prelim(bins, M):
         bins = np.array(bins)
-        a, b = bins[:,0], bins[:,1.]
+        a, b = bins[:,0], bins[:,1]
         apow = np.array([a**(n+1) for n in range(N+1)])
         bpow = np.array([b**(n+1) for n in range(N+1)])
         bap = bpow - apow
