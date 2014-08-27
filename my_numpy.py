@@ -9,6 +9,20 @@ from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pch
 import pdb
 import matplotlib.pyplot as plt
 
+def inranges(values, ranges, right=False):
+    """Determines whether values are in the supplied list of sorted ranges.
+    
+    ranges can be a nested list of range pairs ([[x00,x01], [x10, x11],
+    [x20, x21], ...]), a single list ([x00,x01,x10,x11,x20,x21,...]), or the
+    np.array equivalents. Values are in a range if range[0] <= value < range[1]
+    unless right=True, then range[0] < value <= range[1].
+    
+    Returns a boolean array indexing the values that are in the ranges.
+    """
+    ranges = np.array(ranges)
+    if ranges.ndim > 1: ranges = ranges.ravel()
+    return (np.digitize(values, ranges, right) % 2 == 1)
+
 def midpts(ary, axis=None):
     """Computes the midpoints between points in a vector.
     
@@ -75,7 +89,7 @@ def chunkogram(vec, chunksize, weights=None, unsorted=False):
     If enough points have the same value, the bin edges would be identical. 
     This results in infinite values when computing point densities. To
     circumvent that problem, this function extends the right edge of the bin
-    to a value between that of the identical points and the next largest point.
+    to a value between that of the identical points and the next largest point(s).
     
     Because chunks may not be the same size, the function returns the bin
     edges as well as the counts, much like histogram (hence the name).
@@ -86,23 +100,24 @@ def chunkogram(vec, chunksize, weights=None, unsorted=False):
     v = np.sort(vec) if unsorted else vec
     wtd = weights != None
     
-    edges, count = [(v[0] + v[1])/2.0], []
-    i, iold = chunksize, 0
-    while i+1 < len(v)-1:
+    maxlen = len(v)//chunksize + 1
+    edges, count = np.zeros(maxlen+1), np.zeros(maxlen)
+    edges[0] = (v[0] + v[1])/2.0
+    i, iold, j = chunksize+1l, 1l, 0l
+    while True: #TODO: use cython to make this fast
         #if the endpoint and following point have the same value
-        while v[i] == v[i+1]:
-            i += 1
-            if i+1 >= len(v)-1:
-                edges.append(v[-1])
-                count.append(np.sum(weights[iold:i]) if wtd else (i - iold))
-                break
-        edges.append((v[i] + v[i+1])/2.0)
-        count.append(np.sum(weights[iold:i]) if wtd else (i - iold))
-        iold = i
-        i += chunksize
-        
-    return np.array(count), np.array(edges)
-        
+        while (i+1 < len(v)-1) and (v[i-1] == v[i]): i += 1
+        if i+1 >= len(v)-1:
+            edges[j+1] = (v[-1] + v[-2])/2.0
+            count[j] = np.sum(weights[iold:-1]) if wtd else (len(v) - 1 - iold)
+            edges, count = edges[:j+2], count[:j+1]
+            return np.array(count), np.array(edges)
+        else:
+            edges[j+1] = (v[i-1] + v[i])/2.0
+            count[j] = np.sum(weights[iold:i]) if wtd else (i - iold)
+            iold = i
+            i += chunksize
+            j += 1
 
 def chunk_edges(vec, chunksize, unsorted=False):
     """Determine bin edges that result in an even number of points in each bin.
@@ -255,19 +270,27 @@ def polyfit_binned(bins, y, yerr, order):
         
     return c, cov, f
     
-def argextrema(y):
+def argextrema(y,separate=True):
     """Returns the indices of the local extrema of a series. When consecutive 
     points at an extreme have the same value, the index of the first is
     returned.
     """
     delta = y[1:] - y[:-1]
-    pos_neg = delta//abs(delta)
-    curve_sign = pos_neg[1:] - pos_neg[:-1]
-    argmax = np.nonzero(curve_sign < 0)[0] + 1
-    argmin = np.nonzero(curve_sign > 0)[0] + 1
-    return argmin,argmax
+    pos_neg = np.zeros(len(delta), np.int8)
+    pos_neg[delta > 0] = 1
+    pos_neg[delta < 0] = -1
     
-def emd(t,y,Nmodes=None):
+    curve_sign = pos_neg[1:] - pos_neg[:-1]
+    
+    if separate:
+        argmax = np.nonzero(curve_sign < 0)[0] + 1
+        argmin = np.nonzero(curve_sign > 0)[0] + 1
+        return argmin,argmax
+    else:
+        argext = np.nonzero(curve_sign != 0)[0] + 1
+        return argext
+    
+def emd(t,y,Nmodes=None,flatness=0.0):
     """Decompose function into "intrinsic modes" using empirical mode
     decompisition.
     
@@ -279,13 +302,16 @@ def emd(t,y,Nmodes=None):
     while True:
         try:
             while True:
-                h = sift5(t,h)
+                h = sift(t,h)
                 var = np.sum((h-hold)**2/hold**2)
                 if var < 0.25:
                     c.append(h)
                     r = r - h
+                    
+                    #if the user doesn't want any more modes
                     if len(c) == Nmodes:
                         return c,r
+                    
                     h = r
                     hold = np.zeros(y.shape)
                     break
@@ -296,65 +322,57 @@ def emd(t,y,Nmodes=None):
 class FlatFunction(Exception):
     pass
 
-def sift4(t,y):
+def sift(t,y,nref=10):
     #identify the relative extrema
-    argmin, argmax = argextrema(y)
+    argext = argextrema(y, separate=False)
     
     #if there are too few extrema, raise an exception
-    n = 2
-    if len(argmin) < n or len(argmax) < n:
-        raise FlatFunction('Fewer than {} max or min in the series -- cannot sift.'.format(n))
+    if len(argext) < 2:
+        raise FlatFunction('Too few max and min in the series to sift')
     
-    #function to mirror nearest two extrema about the end
-    nref = 4
-    def reflect(i):
-        s = -1 if i < 0 else 1
-        #parse out the end and extrema points
-        tend, yend = t[i], y[i]
-        [tmin,ymin],[tmax,ymax] = [[t[ii:ii+nref*s:s],y[ii:ii+nref*s:s]] for ii in 
-                                   [argmin[i],argmax[i]]]
+    #should we include the right or left endpoints? (if they are beyond the
+    #limist set by the nearest two extrema, then yes)
+    inclleft = abs(y[0]) > max([abs(y[argext[0]]), abs(y[argext[1]])])
+    inclright = abs(y[-1]) > max([abs(y[argext[-1]]), abs(y[argext[-2]])])
+    if inclleft and inclright: argext = np.concatenate([[0],argext,[-1]])
+    if inclleft and not inclright: argext = np.insert(argext,0,0)
+    if not inclleft and inclright: argext = np.append(argext,-1)
+    #if neither, do nothing
+    
+    #now reflect the extrema about both sides
+    text, yext  = t[argext], y[argext]
+    tleft, yleft = text[0] - (text[nref:0:-1] - text[0]) , yext[nref:0:-1]
+    tright, yright = text[-1] + (text[-1] - text[-2:-nref-2:-1]), yext[-2:-nref-2:-1]
+    tall = np.concatenate([tleft, text, tright])
+    yall = np.concatenate([yleft, yext, yright])
+    
+    #parse out the min and max. the extrema must alternate, so just figure out
+    #whether a min or max comes first
+    if yall[0] < yall[1]:
+        tmin, tmax, ymin, ymax = tall[::2], tall[1::2], yall[::2], yall[1::2]
+    else: 
+        tmin, tmax, ymin, ymax = tall[1::2], tall[::2], yall[1::2], yall[::2]
+    
+    #check again if there are enough extrema, now that the endpoints may have
+    #been added
+    if len(tmin) < 4 or len(tmax) < 4:
+        raise FlatFunction('Too few max and min in the series to sift')
         
-        #mirror the points about the end if it is outside of the two extrema
-        #else mirror about the extremum nearest the end
-        if yend > ymax[0] or yend < ymin[0]: #if the end is outside the relative extrema
-            taxis = tend
-            if yend > ymax[0]: 
-                tmax = np.insert(tmax,0,tend)
-                ymax = np.insert(ymax,0,yend)
-            if yend < ymin[0]:
-                tmin = np.insert(tmin,0,tend)
-                ymin = np.insert(ymin,0,yend)
-        else:
-            rng = lambda v: (v[i+s], v[i+s*(nref+1)])
-            if abs(tmin[0]-tend) < abs(tmax[0]-tend): #if min is closest to the end
-                taxis = tmin[0]
-                i0,i1 = rng(argmin)
-                tmin,ymin = t[i0:i1:s], y[i0:i1:s]
-            else:
-                taxis = tmax[0]
-                i0,i1 = rng(argmax)
-                tmax,ymax = t[i0:i1:s], y[i0:i1:s]
-        
-        if s == 1:
-            tmin, tmax, ymin, ymax = [x[::-1] for x in [tmin, tmax, ymin, ymax]]
-        tmirrored = [taxis + (taxis - tmin), taxis + (taxis - tmax)]
-        ymirrored = [ymin,ymax]
-        return tmirrored, ymirrored
-    
-    #get the mirrored times and construct the vectors with extended ends
-    [tleft, yleft], [tright, yright] = map(reflect, [0,-1])
-    tmin, tmax, ymin, ymax = map(np.concatenate, ([tleft[0], t[argmin], tright[0]],
-                                                  [tleft[1], t[argmax], tright[1]],
-                                                  [yleft[0], y[argmin], yright[0]],
-                                                  [yleft[1], y[argmax], yright[1]]))
-    
     #compute spline enevlopes and mean
     spline_min, spline_max = map(interp1d, [tmin,tmax], [ymin,ymax], ['cubic']*2)
     m = (spline_min(t) + spline_max(t))/2.0
     h = y - m
     
+#    plt.plot(t,y,'-',t,m,'-')
+#    plt.plot(tmin,ymin,'g.',tmax,ymax,'k.')
+#    tmin = np.linspace(tmin[0],tmin[-1],1000)
+#    tmax = np.linspace(tmax[0],tmax[-1],1000)
+#    plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
+#    plt.show()
+    
     return h
 
+#SOMETIMES USE ENDPTS
 def sift5(t,y):
     #identify the relative extrema
     argmin, argmax = argextrema(y)
@@ -396,9 +414,11 @@ def sift5(t,y):
     tmin = np.linspace(tmin[0],tmin[-1],1000)
     tmax = np.linspace(tmax[0],tmax[-1],1000)
     plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
+    plt.show()
 
     return h
 
+#REFLECT NEAREST EXTREMA ABOUT END
 def sift3(t,y):
     #identify the relative extrema
     argmin, argmax = argextrema(y)
@@ -438,6 +458,7 @@ def sift3(t,y):
     
     return h
 
+#REFLECT MORE THAN TWO EXTREMA ABOUT THE END
 def sift2(t,y):
     #identify the relative extrema
     argmin, argmax = argextrema(y)
@@ -493,31 +514,4 @@ def sift2(t,y):
 #    tmax = np.linspace(tmax[0],tmax[-1],1000)
 #    plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
     
-    return h
-        
-def sift(t,y):
-    #identify the relative extrema
-    argmin, argmax = argextrema(y)
-    
-    #if there are less than two extrema, raise an exception
-    if len(argmin) + len(argmax) < 2:
-        raise ValueError('Fewer than two extrema in the series -- cannot sift.')
-    
-    #create splines
-    def spline(i):
-        #reflect the first/last extrema at the beginning/end of the series
-        #note that attemping a fixed-slope end condition gave divergent results
-        #on simulated noisy data
-        tbeg,tend = t[0] + (t[0] - t[i[0]]), t[-1] + (t[-1] - t[i[-1]])
-        text = np.concatenate([[tbeg],t[i],[tend]])
-        yext = np.concatenate([[y[i[0]]],y[i],[y[i[-1]]]])
-        #create spline function
-        spline = interp1d(text,yext,'cubic')
-        return spline
-    
-    spline_min, spline_max = map(spline, [argmin,argmax])
-    
-    #compute mean
-    m = (spline_min(t) + spline_max(t))/2.0
-    h = y - m
     return h
