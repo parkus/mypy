@@ -296,12 +296,16 @@ def argextrema(y,separate=True):
         argext = np.nonzero(curve_sign != 0)[0] + 1
         return argext
     
-def emd(t,y,Nmodes=None,flatness=0.0):
+def emd(t,y,Nmodes=None):
     """Decompose function into "intrinsic modes" using empirical mode
     decompisition.
     
-    From Huang et al. (1998; RSPA 454:903)
+    From Huang et al. (1998; RSPA 454:903).
+    
+    Returns c,r, where c is a list of vectors giving the intrinsic mode values 
+    at t and r is a vector giving the residual values at t.
     """
+    
     c = []
     h, r = [y]*2
     hold = np.zeros(y.shape)
@@ -328,7 +332,19 @@ def emd(t,y,Nmodes=None,flatness=0.0):
 class FlatFunction(Exception):
     pass
 
-def sift(t,y,nref=10):
+def sift(t,y,nref=100,plot=False):
+    """Identify the dominant "intinsic mode" in a series of data.
+    
+    See Huang et al. (1998; RSPA 454:903).
+    
+    Identifies the relative max and min in the series, fits spline curves
+    to these to estimate an envelope, then subtracts the mean of the envelope
+    from the series. The difference is then returned. The extrema are refelcted
+    about the extrema nearest each end of the series to mitigate end
+    effects, where nref controls the maximum total number of extrema (max and
+    min) that are reflected.
+    """
+    
     #identify the relative extrema
     argext = argextrema(y, separate=False)
     
@@ -337,9 +353,9 @@ def sift(t,y,nref=10):
         raise FlatFunction('Too few max and min in the series to sift')
     
     #should we include the right or left endpoints? (if they are beyond the
-    #limist set by the nearest two extrema, then yes)
-    inclleft = abs(y[0]) > max([abs(y[argext[0]]), abs(y[argext[1]])])
-    inclright = abs(y[-1]) > max([abs(y[argext[-1]]), abs(y[argext[-2]])])
+    #limits set by the nearest two extrema, then yes)
+    inclleft = not inranges(y[[0]], y[argext[:2]])[0]
+    inclright = not inranges(y[[-1]], y[argext[-2:]])[0]
     if inclleft and inclright: argext = np.concatenate([[0],argext,[-1]])
     if inclleft and not inclright: argext = np.insert(argext,0,0)
     if not inclleft and inclright: argext = np.append(argext,-1)
@@ -369,155 +385,13 @@ def sift(t,y,nref=10):
     m = (spline_min(t) + spline_max(t))/2.0
     h = y - m
     
-#    plt.plot(t,y,'-',t,m,'-')
-#    plt.plot(tmin,ymin,'g.',tmax,ymax,'k.')
-#    tmin = np.linspace(tmin[0],tmin[-1],1000)
-#    tmax = np.linspace(tmax[0],tmax[-1],1000)
-#    plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
-#    plt.show()
-    
-    return h
-
-#SOMETIMES USE ENDPTS
-def sift5(t,y):
-    #identify the relative extrema
-    argmin, argmax = argextrema(y)
-    
-    #if there are too few extrema, raise an exception
-    n = 2
-    if len(argmin) < n or len(argmax) < n:
-        raise FlatFunction('Fewer than {} max or min in the series -- cannot sift.'.format(n))
-    
-    nx = 100
-    def extend(tt,yy):
-        reflect = lambda v,v0: v0 + (v0 - v)
-        tleft, yleft = [x[nx:0:-1] for x in [tt,yy]]
-        tright, yright = [x[-1:-1-nx:-1] for x in [tt,yy]]
-        tleft, tright = map(reflect, [tleft, tright], [t[0], t[-1]])
-        tout = np.concatenate([tleft, tt, tright])
-        yout = np.concatenate([yleft, yy, yright])
-        return tout, yout
-    
-    #construct vectors with extended ends
-    [tmin,ymin], [tmax,ymax] = map(extend, [t[argmin],t[argmax]], 
-                                           [y[argmin],y[argmax]])
-    
-    #insert ends as necessary
-    blah = lambda tt,yy: [np.insert(x,nx,v[0]) for x,v in [[tt,t], [yy,y]]]
-    blah2 = lambda tt,yy: [np.insert(x,-nx,v[-1]) for x,v in [[tt,t], [yy,y]]]
-    if y[0] > y[argmax[0]]: tmax,ymax = blah(tmax,ymax)
-    if y[0] < y[argmin[0]]: tmin,ymin = blah(tmin,ymin)
-    if y[-1] > y[argmax[-1]]: tmax,ymax = blah2(tmax,ymax)
-    if y[-1] < y[argmin[-1]]: tmin,ymin = blah2(tmin,ymin)
-    
-    #compute spline enevlopes and mean
-    spline_min, spline_max = map(interp1d, [tmin,tmax], [ymin,ymax], ['cubic']*2)
-    m = (spline_min(t) + spline_max(t))/2.0
-    h = y - m
-
-    plt.plot(t,y,'-',t,m,'-')
-    plt.plot(tmin,ymin,'k.',tmax,ymax,'k.')
-    tmin = np.linspace(tmin[0],tmin[-1],1000)
-    tmax = np.linspace(tmax[0],tmax[-1],1000)
-    plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
-    plt.show()
-
-    return h
-
-#REFLECT NEAREST EXTREMA ABOUT END
-def sift3(t,y):
-    #identify the relative extrema
-    argmin, argmax = argextrema(y)
-    
-    #if there are too few extrema, raise an exception
-    n = 2
-    if len(argmin) < n or len(argmax) < n:
-        raise FlatFunction('Fewer than {} max or min in the series -- cannot sift.'.format(n))
-    
-    #function to mirror nearest two extrema about the end
-    def reflect(i):
-        #parse out the end and extrema points
-        tend,tmin,tmax = [t[ii] for ii in [i,argmin[i],argmax[i]]]
-        
-        if abs(tmin-tend) < abs(tmax-tend): #if min is closest to the end            
-            ymin = y[argmin[i]]
-            tmax, ymax = t[i], y[i]
-        else:
-            ymax = y[argmax[i]]
-            tmin, ymin = t[i], y[i]
-            
-        tmirrored = [tend + (tend - tmin), tend + (tend - tmax)]
-        ymirrored = [ymin,ymax]
-        return tmirrored, ymirrored
-    
-    #get the mirrored times and construct the vectors with extended ends
-    [tleft, yleft], [tright, yright] = map(reflect, [0,-1])
-    tmin, tmax, ymin, ymax = map(np.concatenate, ([[tleft[0]], t[argmin], [tright[0]]],
-                                                  [[tleft[1]], t[argmax], [tright[1]]],
-                                                  [[yleft[0]], y[argmin], [yright[0]]],
-                                                  [[yleft[1]], y[argmax], [yright[1]]]))
-    
-    #compute spline enevlopes and mean
-    spline_min, spline_max = map(interp1d, [tmin,tmax], [ymin,ymax], ['cubic']*2)
-    m = (spline_min(t) + spline_max(t))/2.0
-    h = y - m
-    
-    return h
-
-#REFLECT MORE THAN TWO EXTREMA ABOUT THE END
-def sift2(t,y):
-    #identify the relative extrema
-    argmin, argmax = argextrema(y)
-    
-    #if there are too few extrema, raise an exception
-    n = 2
-    if len(argmin) < n or len(argmax) < n:
-        raise FlatFunction('Fewer than {} max or min in the series -- cannot sift.'.format(n))
-    
-    #function to mirror nearest two extrema about the end
-    nref = 4
-    def reflect(i):
-        #parse out the end and extrema points
-        [tend,yend],[tmin,ymin],[tmax,ymax] = [[t[ii],y[ii]] for ii in 
-                                               [i,argmin[i],argmax[i]]]
-        
-        #mirror the points about the end if it is outside of the two extrema
-        #else mirror about the extremum nearest the end
-        if yend > ymax or yend < ymin: #if the end is outside the relative extrema
-            taxis = tend
-            if yend > ymax: tmax, ymax = tend,yend
-            if yend < ymin: tmin, ymin = tend,yend
-        else:
-            i2 = i+1 if i >= 0 else i-1 #second index from end (+1 if left, -1 right)
-            if abs(tmin-tend) < abs(tmax-tend): #if min is closest to the end
-                taxis = tmin
-                ii = argmin[i2]
-                tmin, ymin = t[ii], y[ii]
-            else:
-                taxis = tmax
-                ii = argmax[i2]
-                tmax, ymax = t[ii], y[ii]
-            
-        tmirrored = [taxis + (taxis - tmin), taxis + (taxis - tmax)]
-        ymirrored = [ymin,ymax]
-        return tmirrored, ymirrored
-    
-    #get the mirrored times and construct the vectors with extended ends
-    [tleft, yleft], [tright, yright] = map(reflect, [0,-1])
-    tmin, tmax, ymin, ymax = map(np.concatenate, ([tleft[0], t[argmin], tright[0]],
-                                                  [tleft[1], t[argmax], tright[1]],
-                                                  [yleft[0], y[argmin], yright[0]],
-                                                  [yleft[1], y[argmax], yright[1]]))
-    
-    #compute spline enevlopes and mean
-    spline_min, spline_max = map(interp1d, [tmin,tmax], [ymin,ymax], ['cubic']*2)
-    m = (spline_min(t) + spline_max(t))/2.0
-    h = y - m
-    
-#    plt.plot(t,y,'-',t,m,'-')
-#    plt.plot(tmin,ymin,'k.',tmax,ymax,'k.')
-#    tmin = np.linspace(tmin[0],tmin[-1],1000)
-#    tmax = np.linspace(tmax[0],tmax[-1],1000)
-#    plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
+    if plot:
+        plt.ioff()
+        plt.plot(t,y,'-',t,m,'-')
+        plt.plot(tmin,ymin,'g.',tmax,ymax,'k.')
+        tmin = np.linspace(tmin[0],tmin[-1],1000)
+        tmax = np.linspace(tmax[0],tmax[-1],1000)
+        plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
+        plt.show()
     
     return h
