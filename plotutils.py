@@ -13,7 +13,7 @@ dpi = 100
 fullwidth = 10.0
 halfwidth = 5.0
 
-def tight_axis_limits(ax, xory='both', margin=0.05):
+def tight_axis_limits(ax, xory='both', margin=0.05, datalim=None):
     
     def newlim(oldlim):
         delta = abs(oldlim[1] - oldlim[0])
@@ -39,12 +39,12 @@ def tight_axis_limits(ax, xory='both', margin=0.05):
             return oldlim
     
     if xory == 'x' or xory == 'both':
-        datalim = ax.dataLim.extents[[0,2]]
+        if datalim == None: datalim = ax.dataLim.extents[[0,2]]
         axlim = ax.get_xlim()
         scale = ax.get_xscale()
         ax.set_xlim(newlim_either(datalim,axlim,scale))
     if xory == 'y' or xory == 'both':
-        datalim = ax.dataLim.extents[[1,3]]
+        if datalim == None: datalim = ax.dataLim.extents[[1,3]]
         axlim = ax.get_ylim()
         scale = ax.get_yscale()
         ax.set_ylim(newlim_either(datalim,axlim,scale))

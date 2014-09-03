@@ -9,6 +9,12 @@ from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pch
 import pdb
 import matplotlib.pyplot as plt
 
+def empty_arrays(N, dtype=float, shape=None):
+    arys = [np.array([],dtype) for i in range(N)]
+    if shape != None:
+        for a in arys: a.shape = shape
+    return arys
+
 def inranges(values, ranges, right=False):
     """Determines whether values are in the supplied list of sorted ranges.
     
