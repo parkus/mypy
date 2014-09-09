@@ -12,30 +12,7 @@ import pdb
 def dist(x0,y0,x1,y1):
     return np.sqrt((x1-x0)**2 + (y1-y0)**2)
 
-def circle_intersect_pts(x0,y0,r0,x1,y1,r1):
-    """Computes the points where two circles interesect.
-    
-    If the circles do not interset, an empty list is returned. If one circle is
-    enclosed in another, the index ([0] or [1]) of that circle is returned.
-    Otherwise, the intersection points are returned as the tuple (xi0,yi0),
-    (xi1,yi1) in no particular order.
-    """
-    d = dist(x0,y0,x1,y1)
-    if d >= (r0+r1):
-        return []
-    elif d < abs(r1-r0):
-        return [1] if r1 < r0 else [0]
-    else:
-        #compute intersection
-        q = (r0**2 - r1**2 + x1**2 - x0**2 + y1**2 - y0**2)/2.0
-        dx, dy = (x1 - x0), (y1 - y0)
-        a = 1 + dx**2/dy**2
-        b = -2*x0 - 2*q*dx/dy**2 + 2*y0*dx/dy
-        c = x0**2 + y0**2 + q**2/dy**2 - 2*q*y0/dy - r0**2
-        xi0 = (-b + math.sqrt(b**2 - 4*a*c))/2/a
-        xi1 = (-b - math.sqrt(b**2 - 4*a*c))/2/a
-        yi0, yi1 = (q - xi0*dx)/dy, (q - xi1*dx)/dy
-        return (xi0,yi0), (xi1,yi1)
+
 
 def circle_area_segment(*args):
     """Compute the area of the segment of a circle given the radius and center-
@@ -83,7 +60,6 @@ def circle_area_union(*args, **kwargs):
         x,y,r = np.array(args).T
     if len(args) == 3:
         x, y, r = map(np.array, args)
-    plot = kwargs['plot'] if 'plot' in kwargs.keys() else False
     brutegrid = int(kwargs['brutegrid']) if 'brutegrid' in kwargs.keys() else 0
     circles = np.array([x,y,r]).T
     N = len(circles)    
@@ -111,12 +87,6 @@ def circle_area_union(*args, **kwargs):
                     i += 1
                     if i > N-1: break
         return area*float(cnt)/brutegrid
-        
-    cArea = lambda c: math.pi*circles[c][2]**2
-    
-    if plot:
-        fig = plt.figure()
-        __plotcircs(circles)
     
     def out(pt,others):
         xi,yi = pt
@@ -148,20 +118,23 @@ def circle_area_union(*args, **kwargs):
     xpts = np.array(xpts[:n])
     
     #find nearest counterclockwise intersection pt on circcle c
-    def nextpt(pt,c0,c1,pts):
-        x,y = pt
-        xc,yc,r = circles[c]
-        possible = np.logical_or(pts[:,2] == c, pts[:,3] == c)
-        
+    def nextpt(pt,c0,c1,pts,both=False):
+        possible = np.logical_or(pts[:,2] == c1, pts[:,3] == c1)
+        if both:
+            possible2 = np.logical_or(pts[:,2] == c0, pts[:,3] == c0)
+            possible = np.logical_or(possible, possible2)
         if sum(possible) == 0:
             raise ValueError('Well, that shouldn\'t have happend. Couldn\'t find a next point.')
         elif sum(possible) == 1:
             return np.nonzero(possible)[0][0]
         if sum(possible) > 1:
-            nadir = [xc - x, yc - y]
-            tangent = np.array([nadir[1], -nadir[0]])
-            chords = pts[possible,:2] - np.array([x,y])[np.newaxis,:]
-            ccw = __CCWmeasure(tangent,chords)
+            cen0 = circles[c0,:2]
+            cen1 = circles[c1,:2]
+            radial0 = pt - cen0
+            radial1 = pt - cen1
+            outvec = radial0 + radial1
+            chords = pts[possible,:2] - pt[np.newaxis,:]
+            ccw = __CCWmeasure(outvec,chords)
             arg = np.argmax(ccw)
             return np.nonzero(possible)[0][arg]
     
@@ -172,84 +145,140 @@ def circle_area_union(*args, **kwargs):
         polygon = []
         polyapp = lambda i, c: polygon.append(list(xpts[i,:2]) + [c])
         pt = xpts[0,:2]
-        c0,c1 = xpts[0,2:]
-        # don't remove the starting point yet
+        clast, cnext = xpts[0,2:]
+        # don't remove the starting point
         
-        #get nextpt for both c0 and c1
-        i0 = nextpt(pt,c0,xpts[1:]) + 1
-        i1 = nextpt(pt,c1,xpts[1:]) + 1
-        if i0 == i1:
-        #then just the two circles intersect and the polygon is a line
-            polyapp(0,c0)
-            polyapp(i0,c1)
-            xpts = np.delete(xpts, [0,i0], 0)
-            break
-        #otherwise pick whichever does not lie on the same two circles
-        first = all(xpts[i1,2:] == [c0,c1]) or all(xpts[i1,2:] == [c1,c0])
-        i = i0 if first else i1
-        clast = c0 if first else c1
-        cnext = xpts[i,2] if xpts[i,2] != clast else xpts[i,3]
-        polyapp(0,clast)
-        polyapp(i,cnext)
-        pt = xpts[i,:2]
-        xpts = np.delete(xpts, i, 0)
-        
-        #now get the rest
+        i = nextpt(pt, clast, cnext, xpts[1:], both=True) + 1
+        clast = clast if clast in xpts[i,2:] else cnext
+        polyapp(0, clast)
         while True:
-            i = nextpt(pt, cnext, xpts)
-            clast = cnext
-            cnext = xpts[i,2] if xpts[i,2] != clast else xpts[i,3]
+            circs = xpts[i,2:]
+            cnext = circs[circs != clast][0]
             pt = xpts[i,:2]
             polyapp(i, cnext)
-            xpts = np.delete(xpts, i, 0)
+            xpts = np.delete(xpts, i, 0) 
             if polygon[-1][:2] == polygon[0][:2]: #back at the first point
                 polygons.append(polygon)
                 break
+            i = nextpt(pt, clast, cnext, xpts)
+            clast = cnext
     
     #sum area of groups of circles (polygons and associate segments)
-    areas = []
-    for polygon in polygons:
-        if len(polygon) == 2:
-            c0,c1 = polygon[0][2:]
-            r0,r1 = circles[c0[2]], circles[c1[2]]
-            x0,y0 = polygon[0][:2]
-            x1,y1 = polygon[1][:2]
-            area = cArea(c0) + cArea(c1)
-            area -= circle_area_segment(r0,x0,y0,x1,y1)
-            area -= circle_area_segment(r1,x0,y0,x1,y1)
-        else:
-            x,y,_ = zip(*polygon)
-            area = polygon_area(x,y)
-            for i in range(len(polygon)-1):
-                x0,y0,c = polygon[i]
-                x1,y1,_ = polygon[i+1]
-                xc,yc,r = circles[c]
-                chord = [x1-x0, y1-y0]
-                perp = np.array([-chord[1],chord[0]])
-                nadir = np.array([[xc-x0, yc-y0]])
-                segarea = circle_area_segment(r,x0,y0,x1,y1)
-                left = (__CCWmeasure(perp,nadir)[0] > 0)
-                if left: area += segarea
-                else: area += cArea(c) - segarea
-        areas.append(area)
+    areas = np.zeros(len(polygons))
+    for i,polygon in enumerate(polygons):
+        x,y,_ = zip(*polygon)
+        area = polygon_area(x,y)
+        line = len(polygon) == 3
+        for j in range(len(polygon)-1):
+            x0,y0,c = polygon[j]
+            x1,y1,_ = polygon[j+1]
+            xc,yc,r = circles[c]
+            chord = np.array([x1-x0, y1-y0])
+            nadir = np.array([[xc-x0, yc-y0]])
+            segarea = circle_area_segment(r,x0,y0,x1,y1)
+            left = (__CCWmeasure(chord,nadir)[0] > -1.0)
+            area += segarea if (left and not line) else cArea(c) - segarea
+        areas[i] = area
         
     #sum area of free circles
     free, = np.nonzero(np.logical_not(inorx))
-    areas.extend(map(cArea, free))
+    areas = np.append(areas, map(cArea, free))
         
     return sum(areas)
     
-def __plotcircs(circles):
-    for i,circ in enumerate(circles):
-        theta = np.linspace(0,2*math.pi,100)
-        x,y,r = circ
-        dx,dy = r*np.cos(theta), r*np.sin(theta)
-        xv,yv = x+dx, y+dy
-        plt.plot(xv,yv)
-        plt.text(x,y,i,ha='center',va='center')
 
-def circle_area_arbitrary():
-    pass
+def circle_area_subtract(circles, subcircles):
+    """Compute the area of the union of circles and subtract any area that
+    overlaps with the circles in cubcircles.
+    
+    Circles are Nx3 arrays or the list equivalent. 
+    
+    Note that this is not the same as computing area of the difference of two
+    shapes, since that would include area in the subtracted circles that does
+    not overlap with the original circles.
+    """
+
+def __circle_group_areas(circles,xpts,add):
+    """Compute the area of groups of intersecting circles by identifying the
+    polygons constructed from xpts, computing the polygon area, and adding
+    the area of the bordering circle segments.
+    """
+    
+
+def circle_intersection_pts(circles, exclude=None):
+    """Idetifies all intersection points between the provided circles.
+    
+    circles is a numpy NxM array where N is the number of circles (or list 
+    equivalent). Each row must start with x,y,r, but can include additional
+    values following to be used by a supplied exclude function
+    
+    A function can be provided in exclude that returns true when called with
+    (pt, othercirlces), where othercircles are the circles that do not
+    intersect at pt. When exclude returns True, the point will be excluded.
+    
+    The function returns a list of the points and the index of the interseting
+    circles an Nx4 array [[x,y,c0,c1],...]. It also returns two vectors,
+    the first identifying whether each circle has any intersections and the
+    second whether that circle is completely inside of another circle
+    """
+    circles = np.array(circles)
+    N = len(circles)
+    
+    #preallocate for N(N-1) = max possible number of intersections    
+    xpts = np.zeros([N*(N-1),4])
+    xflags, inflags = np.zeros(N, bool), np.zeros(N, bool)
+    n = 0 #counter to index into xpts
+    def apppt(pt,i,k,n):
+        xpts[n] = [pt[0],pt[1],i,k]
+        n += 1
+    for i,circ0 in enumerate(circles):
+        for j,circ1 in enumerate(circles[i+1:]):
+            k = j+i+1
+            pts = circle_circle_pts(*np.append(circ0[:3],circ1[:3]))
+            if len(pts) == 1: #if one circle is inside another
+                if pts == [0]: inflags[i] = True
+                else:          inflags[k] = True
+            if len(pts) > 1: #if the circles intersect
+                xflags[[i,k]] = True
+                #add points if they are outside of all other circles
+                others = range(N)
+                others.remove(i)
+                others.remove(k)
+                if exclude != None:
+                    for pt in pts:
+                        if not exclude(pt, circles(others)): apppt(pt,i,k,n)
+                else: apppt(pt,i,k,n)
+    xpts = np.array(xpts[:n])
+    
+    return xpts, xflags, inflags
+
+def cArea(c):
+    return math.pi*circles[c][2]**2
+
+def circle_circle_pts(x0,y0,r0,x1,y1,r1):
+    """Computes the points where two circles interesect.
+    
+    If the circles do not interset, an empty list is returned. If one circle is
+    enclosed in another, the index ([0] or [1]) of that circle is returned.
+    Otherwise, the intersection points are returned as the tuple (xi0,yi0),
+    (xi1,yi1) in no particular order.
+    """
+    d = dist(x0,y0,x1,y1)
+    if d >= (r0+r1):
+        return []
+    elif d < abs(r1-r0):
+        return [1] if r1 < r0 else [0]
+    else:
+        #compute intersection
+        q = (r0**2 - r1**2 + x1**2 - x0**2 + y1**2 - y0**2)/2.0
+        dx, dy = (x1 - x0), (y1 - y0)
+        a = 1 + dx**2/dy**2
+        b = -2*x0 - 2*q*dx/dy**2 + 2*y0*dx/dy
+        c = x0**2 + y0**2 + q**2/dy**2 - 2*q*y0/dy - r0**2
+        xi0 = (-b + math.sqrt(b**2 - 4*a*c))/2/a
+        xi1 = (-b - math.sqrt(b**2 - 4*a*c))/2/a
+        yi0, yi1 = (q - xi0*dx)/dy, (q - xi1*dx)/dy
+        return (xi0,yi0), (xi1,yi1)
 
 def __CCWmeasure(a,bs):
     """Gives a measure of how closely aligned the vectors in b are to a in a CCW sense. It
@@ -257,6 +286,15 @@ def __CCWmeasure(a,bs):
     time. Instead, it returns a number that is greater the more closely aligned
     a b vectors are with a. If they are more than 180 deg CCW from a, the 
     number is negative. bs is an Nx2 array."""
-    norms2 = np.sum(bs**2, axis=1)
+    ccw90 = np.array([-a[1], a[0]])
+    bnorms2 = np.sum(bs**2, axis=1)
+    anorm2 = np.sum(a**2)
     dots = np.sum(bs*a[np.newaxis,:], axis=1)
-    return dots/norms2
+    cos_angle = dots/np.sqrt(bnorms2*anorm2)
+    sin_sign = np.sum(bs*ccw90[np.newaxis,:], axis=1)
+    past180 = (sin_sign < 0)
+    before180 = np.logical_not(past180)
+    cos_angle[before180] = cos_angle[before180] + 1.0
+    cos_angle[past180] = -cos_angle[past180] - 1.0
+    return cos_angle
+    
