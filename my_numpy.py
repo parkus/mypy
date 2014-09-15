@@ -139,7 +139,7 @@ def chunk_edges(vec, chunksize, unsorted=False):
         
     #use indices bc if len(vec) % chunksize == 0 there will be a point left of
     #the last bin edges, but not right of it
-    iright = np.arange(1, len(v), chunksize)
+    iright = np.arange(1, len(v), chunksize, int)
     
     edges = (v[iright] + v[iright-1])/2.0
     return edges

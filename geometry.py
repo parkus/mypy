@@ -55,10 +55,10 @@ def brute_area(xrange,yrange,in_or_out,Nsamples=1e4):
     xvec = np.random.uniform(xrange[0],xrange[1],Nsamples)
     yvec = np.random.uniform(yrange[0],yrange[1],Nsamples)
     
-    cnt = 0
     try:
-        cnt = in_or_out(xvec,yvec)
+        cnt = np.sum(in_or_out(xvec,yvec))
     except:
+        cnt = 0
         for x,y in zip(xvec,yvec):
             cnt += in_or_out(x,y)
         
@@ -98,8 +98,28 @@ def circle_area_union(circles, brutegrid=False):
     loner_area = np.sum(__cArea(circles[loners]))
     
     return group_area+loner_area
-
-def circle_area_subtract(circles, subcircles, brutegrid=False):
+    
+def circleset_area_difference(circles0,circles1,xpts=None):
+    circles = np.vstack([circles1,circles2])
+    circles = np.hstack([circles, [[0]*len(circles0) + [1]*len(circles1)]])
+    def include(pt):
+        xi,yi,c0,c1 = pt
+        if circles[c0][-1] == circles[c1][-1]:
+             others = circles[[i for i in range(len(circles)) if i not in [c0,c1]]]
+             d = dist(xi,yi,others[:,0],others[:,1])
+             return not any(d < others[:,2])
+    
+                    
+    xpts,xflags,incircs = circle_intersection_pts(circles,include)
+    
+    group_area = __circle_group_areas(circles,xpts)
+    inflags = np.array([len(inc) > 0 for inc in incircs], bool)
+    loners = np.logical_not(np.logical_or(inflags,xflags))
+    loner_area = np.sum(__cArea(circles[loners]))
+    
+    return group_area+loner_area
+    
+def circleset_area_subtract(circles, subcircles, brutegrid=False):
     """Compute the area of the union of circles and subtract any area that
     overlaps with the circles in cubcircles.
     
@@ -109,85 +129,31 @@ def circle_area_subtract(circles, subcircles, brutegrid=False):
     shapes, since that would include area in the subtracted circles that does
     not overlap with the original circles.
     """
-    circles, subcircles = map(np.array, [circles,subcircles])
-    allcircles = np.vstack([circles,subcircles])
-    addsub = np.array([True]*len(circles) + [False]*len(subcircles))
-    
-    if brutegrid:
-        def in_circles(x,y):
-            for circ in subcircles:
-                if dist(x,y,circ[0],circ[1]) <= circ[2]:
-                    return False
-            for circ in circles:
-                if dist(x,y,circ[0],circ[1]) <= circ[2]:
-                    return True
-            return False
-            
-        x,y,r = allcircles.T
-        xrange = [np.min(x-r), np.max(x+r)]
-        yrange = [np.min(y-r), np.max(y+r)]
-        
-        return brute_area(xrange,yrange, in_circles, brutegrid)
-        
-    def include(pt):
-        xi,yi,c0,c1 = pt
-        as0, as1 = addsub[[c0,c1]]
-        keep = [i for i in range(len(allcircles)) if i not in [c0,c1]]
-        others, add = allcircles[keep], addsub[keep]
-        d = dist(xi,yi,others[:,0],others[:,1])
-        sub = np.logical_not(add)
-        inpos = np.sum(d[add] < others[add,2])
-        inneg = np.sum(d[sub] < others[sub,2])
-        
-        #otherwise, check various criteria
-        if as1 and as0: #intersection of two positive circles
-            inc = (inneg == 1) and (inpos == 0)
-        elif not as0 and not as1: #two negative circles
-            inc = (inpos == 1) and (inneg == 0)
-        else: #one negative and one positive
-            inc = (inpos == 0)
-            
-        return inc
+    Aunion = map(circle_area_union, [circles, subcircles])
+    Adiff = circleset_area_difference(circles,subcircles)
+    Aint = (sum(Aunion) - Adiff)/2.0
+    return Aunion[0] - Aint
 
-    #first the total union area
-    union_area = circle_area_union(circles)
-    
-    #now  compute the overlap polygons
-    xpts,xflags,incircs = circle_intersection_pts(allcircles,include)
-    
-    #get rid of any lines across circles totally within other circles and mark
-    #them as not intersecting
-    delete = np.zeros(len(xpts), bool)
-    cdel = []
-    Nx = len(xpts)
-    for i in range(Nx):
-        nxt = (i+1) % (Nx - 1)
-        if all(xpts[i,2:] == xpts[nxt,2:]):
-            c0,c1 = map(int, xpts[i,2:])
-            others = list(set(range(Nx)) - set([i,nxt]))
-            cs = xpts[others,2:].ravel()
-            if len(incircs[c0]) > 0 and c0 not in cs:
-                delete[[i,nxt]] = True
-                cdel.append(c0)
-            if len(incircs[c1]) > 0 and c1 not in cs:
-                delete[[i,nxt]] = True
-                cdel.append(c1)
-    xpts = np.delete(xpts, np.nonzero(delete), 0)
-    xflags[cdel] = False
-    
-    group_area = __circle_group_areas(allcircles,xpts,kind='subtraction',
-                                      addsub=addsub)
-    
-    #and circles in circles (pos in all neg or neg in all pos)
-    checkinpos = lambda inc: all(addsub[inc]) if len(inc) else False
-    checkinneg = lambda inc: not any(addsub[inc]) if len(inc) else False
-    def lonerareas(checkfunc):
-         enveloped = np.array(map(checkfunc, incircs), bool)
-         loners = np.logical_and(enveloped,np.logical_not(xflags))
-         return np.sum(__cArea(circles[loners]))
-    negloner_area, posloner_area = map(lonerareas, [checkinpos, checkinneg])
-    
-    return union_area - group_area - negloner_area - posloner_area
+def circleset_area_intersect(circles1,circles2):
+    Aunion = map(circle_area_union, [circles1, circles2])
+    Adiff = circleset_area_difference(circles1,circles2)
+    return (sum(Aunion) - Adiff)/2.0
+
+def __circpolyarea(circles,polygon,outer='True'):
+    n = len(polygon)    
+    if n <= 3:
+        raise ValueError('Polygon with 3 ot fewer vertices encountered.')
+    x,y = polygon.T[:2]
+    area = polygon_area(x,y)
+    for j in range(n-1):
+        x0,y0,c = polygon[j]
+        x1,y1,_ = polygon[j+1]
+        xc,yc,r = circles[c]
+        segarea = circle_area_segment(r,x0,y0,x1,y1)
+        chord = np.array([x1-x0, y1-y0])
+        nadir = np.array([[xc-x0, yc-y0]])
+        inside = (__CCWmeasure(chord,nadir)[0] > -1.0)
+        area += segarea if inside else __cArea(circles[[c]]) - segarea
     
 def __circle_group_areas(circles,xpts,kind='union',addsub=None):
     """Compute the area of groups of intersecting circles by identifying the
@@ -258,7 +224,7 @@ def __circle_group_areas(circles,xpts,kind='union',addsub=None):
                 break
             i = nextpt(pt, xpts)
     
-    #sum area of groups of circles (polygons and associate segments)
+    #sum area of groups of circles (polygons and associated segments)
     areas = np.zeros(len(polygons))
     for i,polygon in enumerate(polygons):
         if len(polygon) == 3: #there must be a more elegant way to do this
