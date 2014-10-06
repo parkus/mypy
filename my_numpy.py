@@ -9,6 +9,24 @@ from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pch
 import pdb
 import matplotlib.pyplot as plt
 
+def mids2edges(mids):
+    """Reconstructs bin edges given only the midpoints, assuming a linear
+    change in the bin sizes.
+    
+    Without such an assumption, a solution for N+1 values is not possible from
+    N provided values.
+    
+    Could be accelerated with a cython implementation."""
+    Npts = len(mids)
+    d0 = (mids[1] - mids[0])
+    d1 = (mids[-1] -mids[-2])
+    dslope = (d1 - d0)/Npts
+    d00 = -0.5*dslope + d0
+    e = np.zeros(Npts+1)
+    e[0] = mids[0] - d00/2.0
+    for i in np.arange(1,Npts+1): e[i] = 2*mids[i-1] - e[i-1]
+    return e
+
 def empty_arrays(N, dtype=float, shape=None):
     arys = [np.array([],dtype) for i in range(N)]
     if shape != None:
@@ -169,46 +187,38 @@ def intergolate(x_bin_edges,xin,yin):
     Note that bins outside of xin will assume the curve is constant
     at the value of its closest endpoint.
     """
-    from numpy import concatenate, trapz, insert, append, zeros
-    #import pdb
     
-    xbe = x_bin_edges    
+    xbe = np.copy(x_bin_edges)
     
     #if bins extend beyond the range of xin, add extra xin,yin points at the
     #relevant end
     if xbe[0] < xin[0]:
-        xin, yin = insert(xin,0,xbe[0]), insert(yin,0,yin[0])
+        xin, yin = np.insert(xin,0,xbe[0]), np.insert(yin,0,yin[0])
     if xbe[-1] > xin[-1]:
-        xin, yin = append(xin,xbe[-1]), append(yin,yin[-1])
+        xin, yin = np.append(xin,xbe[-1]), np.append(yin,yin[-1])
     
-    #make a single-point interpolations function, mainly for readability
-    interp = lambda x0,y0,x1,y1,x: (y1-y0)/(x1-x0)*(x-x0) + y0    
-    
-    #define variables to store the indices of the points just right of the left
-    #and right edges of the bins, respectively
+    #define variables to store the slice edges for points within each 
+    #intergolation bin, exclusive
     i0, i1 = 0, 0
-    yout = zeros(len(xbe)-1)
-    while xin[i0] < xbe[0]: i0 += 1
+    yout = np.zeros(len(xbe)-1)
+    while xin[i0+1] <= xbe[0]: i0 += 1
     for j in range(len(xbe)-1):
-        #find the index of the first point falling just right or on the edge
+        #find the index of the first point falling just left or on the edge
         #of the bin
         while xin[i1] < xbe[j+1]: i1 += 1
-        
-        #interpolate values at the bin edges
-        yleft = interp(xin[i0-1], yin[i0-1], xin[i0], yin[i0], xbe[j])
-        yright = interp(xin[i1-1], yin[i1-1], xin[i1], yin[i1], xbe[j+1])
+            #TODO: fix the above
         
         #inegrate xin,yin that fall in the current bin
-        xsnippet = concatenate(([xbe[j]],xin[i0:i1],[xbe[j+1]]))
-        ysnippet = concatenate(([yleft],yin[i0:i1],[yright]))
-#        pdb.set_trace()
-        yout[j] = trapz(x = xsnippet, y = ysnippet)/(xbe[j+1] - xbe[j])
+        xedges = np.hstack([[xbe[j]], xin[i0:i1], xbe[j+1]])
+        dx = xedges[1:] - xedges[:-1]
+        areas = dx*yin[i0:i1]
+        yout[j] = np.sum(areas)/(xbe[j+1] - xbe[j])
         
         # update the point just inside of the left bin edge
         i0 = i1
         
     return yout
-
+    
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
     """
