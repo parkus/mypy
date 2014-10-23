@@ -219,6 +219,29 @@ def intergolate(x_bin_edges,xin,yin):
         
     return yout
     
+def rebin(newbins, oldbins, values):
+    """Take binned data and estimate the values wihtin different bins edges.
+    """
+    binmin, binmax = np.min(oldbins), np.max(oldbins)
+    if any(newbins < binmin) or any(newbins > binmax):
+        raise ValueError('New bin edges cannot extend beyond old bin edges.')
+    
+    #figure out where the newbins fit into the oldbins
+    i = np.digitize(newbins, oldbins)
+    result = np.zeros(len(newbins)-1)
+    d = oldbins[1:] - oldbins[:-1]
+    leftin = i[:-1]
+    rightin = i[1:]-1
+    for n,(l,r) in enumerate(zip(leftin, rightin)): 
+        if l > r:
+            result[n] = (newbins[n+1] - newbins[n])/d[l-1]*values[l-1]
+        else:
+            mid = np.sum(values[l:r])
+            left = (oldbins[l] - newbins[n])/d[l-1]*values[l-1]
+            right = (newbins[n+1] - oldbins[r])/d[r]*values[r] if r < len(d) else 0.0
+            result[n] = left + mid + right
+    return result
+    
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
     """
