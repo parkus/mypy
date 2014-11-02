@@ -27,6 +27,17 @@ def mids2edges(mids):
     for i in np.arange(1,Npts+1): e[i] = 2*mids[i-1] - e[i-1]
     return e
 
+def block_edges(ary):
+    """
+    Gives the slice indices of the start and end for each block of True values
+    in a boolean array.
+    """
+    a = np.hstack([[False],np.array(ary,np.int0),[False]])
+    chng = a[1:] - a[:-1]
+    beg, = np.nonzero(chng == 1)
+    end, = np.nonzero(chng == -1)
+    return beg,end
+
 def empty_arrays(N, dtype=float, shape=None):
     arys = [np.array([],dtype) for i in range(N)]
     if shape != None:

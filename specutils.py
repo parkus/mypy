@@ -188,6 +188,7 @@ def common_grid(wavelist):
     
 def identify_continuum(wbins, y, err, function_generator, maxsig=2.0, 
                        emission_weight=1.0, maxcull=0.99, plotsteps=False):
+    #TODO: modify this to use mypy.stats.flag_anomalies
     if type(plotsteps) == bool:
         plotbelow = np.inf if plotsteps else 0.0
     else:
