@@ -231,7 +231,11 @@ def intergolate(x_bin_edges,xin,yin):
     return yout
     
 def rebin(newbins, oldbins, values):
-    """Take binned data and estimate the values wihtin different bins edges.
+    """
+    Take binned data and estimate the values wihtin different bins edges.
+    
+    Assumes the value in each bin is the integral of some function over that
+    bin, -NOT- the average of the function.
     """
     binmin, binmax = np.min(oldbins), np.max(oldbins)
     if any(newbins < binmin) or any(newbins > binmax):

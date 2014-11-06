@@ -267,3 +267,23 @@ def identify_continuum(wbins, y, err, function_generator, maxsig=2.0,
                              '(increasing) the maxsig condition for passing '
                              'the Runs Test, or increasing maxcull to allow '
                              'more data to be masked out.')
+                             
+def rebin(newedges, oldedges, flux, error):
+    """
+    Rebin a spectrum given the edges of the old and new wavelength grids.
+    
+    Assumes flux is per wavelength, but otherwise units are irrelevent so long
+    as they are consistent.
+    
+    Returns flux,error for the new grid.
+    """
+    dwold = oldedges[1:] - oldedges[:-1]
+    dwnew = newedges[1:] - newedges[:-1]
+    
+    intflux = flux*dwold
+    interror = error*dwold
+    newintflux = mnp.rebin(newedges, oldedges, intflux)
+    newintvar = mnp.rebin(newedges, oldedges, interror**2)
+    newinterror = mnp.sqrt(newintvar)
+    return newintflux/dwnew, newinterror/dwnew
+    
