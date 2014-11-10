@@ -9,8 +9,9 @@ import numpy as np
 import my_numpy as mnp
 from scipy.interpolate import interp1d
 from math import ceil
+from matplotlib import plt
 
-def coadd(wavelist, fluxlist, fluxerrlist, weightlist):
+def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     """Coadds spectra of differing wavlength ranges and resolutions according
     to the provided weight factors.
     
@@ -65,6 +66,10 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist):
         weights and flux units that are consistent. Using the exposure time
         example, the flux units should include a per unit time component for
         weighting by exposure time to provide a correct result. 
+        
+    masklist : list, optional
+        A list of boolean arrays to mask out certain pixels. True values
+        mean the pixel shouldn't be used.
 
     Returns
     -------
@@ -86,25 +91,31 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist):
     """
     
     #vet the input
+    if masklist is None:
+        masklist = [np.zeros(flux.shape, bool) for flux in fluxlist]
+    
     lenvec = lambda lst: np.array(map(len, lst))
-    wMs, fMs, feMs = map(lenvec, [wavelist, fluxlist, fluxerrlist])
+    wMs, fMs, feMs, mMs = map(lenvec, [wavelist, fluxlist, fluxerrlist, masklist])
     if any(fMs != feMs):
-        raise ValueError('Corresponding flux and flux error vectors must be ',
+        raise ValueError('Corresponding flux and flux error vectors must be '
                          'the same lengths.')
     for weights, fM in zip(weightlist, fMs):
         try:
             wtM = len(weights)
             if wtM != fM:
-                raise ValueError('All weights must either be floats or 1-D',
-                                 'numpy arrays the same length as the ',
+                raise ValueError('All weights must either be floats or 1-D'
+                                 'numpy arrays the same length as the '
                                  'corresponding flux array.')
         except TypeError:
             if type(weights) not in [float, int]:
-                raise TypeError('Each elements of weightlist must either ',
+                raise TypeError('Each elements of weightlist must either '
                                 'be a float or a numpy array.')
     if any(np.logical_and(wMs != fMs, wMs != (fMs + 1))):
-        raise ValueError('All wavelength arrays must have a length equal to ',
-                         'or one greater than the corresponding flux array.')
+        raise ValueError('All wavelength arrays must have a length equal to '
+                         'or one greater than the corresponding flux array.')         
+    if any(fMs != mMs):
+        raise ValueError('Corresponding flux and weight vectors must be the '
+                         'same lengths.')
     
     #get wavelength edges for any wavelengths that are grids
     welist = []
@@ -116,38 +127,33 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist):
     w = common_grid(welist)
     
     #coadd the spectra (the m prefix stands for master)
-    mins, mvar, mexptime = [np.zeros(n-1)for i in range(3)]
+    mfluence, mvar, mweight = [np.zeros(len(w)-1)for i in range(3)]
     #loop through each order of each x1d
-    for x1d in x1ds:
-        flux_arr, err_arr, dq_arr = [x1d[1].data[s] for s in 
-                                     ['flux', 'error', 'dq']]
-        we_arr = wave_edges(x1d)
-        exptime = x1d[1].header['exptime']
-        for flux, err, dq, we in zip(flux_arr, err_arr, dq_arr, we_arr):
-            #intergolate and add flux onto the master grid
-            dw = we[1:] - we[:-1]
-            flux, err = flux*dw, err*dw
-            wrange = [np.min(we), np.max(we)]
-            badpix = (dq != 0)
-            flux[badpix], err[badpix] = np.nan, np.nan
-            overlap = (np.digitize(w, wrange) == 1)
-            addins = exptime*mnp.rebin(w[overlap], we, flux)
-            addvar = exptime**2*mnp.rebin(w[overlap], we, err**2)
-            
-            addtime = np.ones(addins.shape)*exptime
-            badbins = np.isnan(addins)
-            addins[badbins], addvar[badbins], addtime[badbins] = 0.0, 0.0, 0.0
-            i = np.nonzero(overlap)[0][:-1]
-            mins[i] += addins
-            mvar[i] += addvar
-            mexptime[i] += addtime
+    for we, flux, err, weight, mask in zip(welist, fluxlist, fluxerrlist, 
+                                           weightlist, masklist):
+        #intergolate and add flux onto the master grid
+        dw = we[1:] - we[:-1]
+        fluence, fluerr = flux*dw*weight, err*dw*weight
+        fluence[mask], fluerr[mask] = np.nan, np.nan
+        wrange = [np.min(we), np.max(we)]
+        overlap = (np.digitize(w, wrange) == 1)
+        wover = w[overlap]
+        addflu = mnp.rebin(wover, we, fluence)
+        addvar = mnp.rebin(wover, we, fluerr**2)
+        addweight = mnp.rebin(w[overlap], we, weight)/(wover[1:] - wover[:-1])
+        addmask = np.isnan(addflu)
+        addflu[addmask], addvar[addmask], addweight[addmask] = 0.0, 0.0, 0.0
+        i = np.nonzero(overlap)[0][:-1]
+        mfluence[i] += addflu
+        mvar[i] += addvar
+        mweight[i] += addweight
     
     mdw = w[1:] - w[:-1]
-    mflux = mins/mexptime/mdw
-    merr = np.sqrt(mvar)/mexptime/mdw
-    badbins = (mexptime == 0.0)
-    mflux[badbins], merr[badbins] = np.nan, np.nan
-    return w, mflux, merr, mexptime
+    mflux = mfluence/mweight/mdw
+    merr = np.sqrt(mvar)/mweight/mdw
+    mmask = (mweight == 0.0)
+    mflux[mmask], merr[mmask] = np.nan, np.nan
+    return w, mflux, merr, mweight
     
 def common_grid(wavelist):
     """Generates a common wavelength grid from any number of provided grids
