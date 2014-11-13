@@ -9,7 +9,7 @@ import numpy as np
 import my_numpy as mnp
 from scipy.interpolate import interp1d
 from math import ceil
-from matplotlib import plt
+import matplotlib.pyplot as plt
 
 def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     """Coadds spectra of differing wavlength ranges and resolutions according
