@@ -9,7 +9,7 @@ from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pch
 import matplotlib.pyplot as plt
 import warnings
 
-def mids2edges(mids, start='mid', fit='none'):
+def mids2edges(mids, start='mid', first='adjacent'):
     """
     Reconstructs bin edges given only the midpoints.
     
@@ -18,19 +18,22 @@ def mids2edges(mids, start='mid', fit='none'):
     mids : {np.array|list}
         A 1-D array or list of the midpoints from which bin edges are to be 
         inferred.
-    fit : {'none'|'linear-i'|'linear-x'|function}, optional
-        Use a fit to the spacing between the midpoints to extrapolate the
-        width of the first or last bin. This can only be used with start set to
-        'left' or 'right'. If a function is provided, that function should
+    first : {float|'adjcacent'|'linear-i'|'linear-x'|function}, optional
+        Width of the starting bin to the spacing between the midpoints to extrapolate the
+        width of the first or last bin.
+        
+        The linear options try to extrapolate the width of the start bin by
+        assuming the bin widths follow the same linear change as the midpoint
+        spacings. linear-i' assumes a linear change with respect to the bin index
+        whereas 'linear-x' assumes a linear change with respect to the bin
+        value. These can only be used with start set to
+        'left' or 'right'. Note that using 'linear' can produce nonsensical output 
+        if the spacing between midpoints does not vary linearly.
+        
+        Alternatively, a function may be provided that fits the midpoint spacings.
+        That function should
         return a fit function (just like scipy's interp1d does), such that if
         result = function(xin,yin), then yout = result(xout) is a valid.
-        
-        'linear-i' assumes a linear change with respect to the bin index
-        whereas 'linear-x' assumes a linear change with respect to the bin
-        value.
-        
-        Note that using 'linear' can produce nonsensical output if the spacing
-        between midpoints does not vary linearly.
         
     start : {'left'|'right'|'mid'}, optional
         left : start by assuming the spacing between the first two midpts
@@ -52,26 +55,29 @@ def mids2edges(mids, start='mid', fit='none'):
     mids = np.array(mids)
     N = len(mids)
     e = np.zeros(N+1)
-    if fit != 'none' and start == 'mid':
+    if first != 'none' and start == 'mid':
         raise ValueError("Start can only be 'mid' if fit == 'none'.")
-        
-    if fit is 'none':
+      
+    if type(first) is float:
+        if start == 'left': e[0] = mids[0] - first/2.0
+        if start == 'right': e[-1] = mids[-1] + first/2.0
+    elif first == 'adjacent':
         if start == 'left': e[0] = mids[0] - (mids[1] - mids[0])/2.0
         if start == 'right': e[-1] = mids[-1] + (mids[-1] - mids[-2])/2.0
     else:
         d = mids[1:] - mids[:-1]
         x = midpts(mids)
-        if fit == 'linear-x':
+        if first == 'linear-x':
             c = np.polyfit(x, d, 1)
             fitfun = lambda x: np.polyval(c, x)
-        if fit == 'linear-i':
+        if first == 'linear-i':
             cdi = np.polyfit(np.arange(N-1), d, 1)
             cix = np.polyfit(x, np.arange(N-1), 2)
             def fitfun(x):
                 i = np.polyval(cix, x)
                 return np.polyval(cdi, i)
-        elif callable(fit):
-            fitfun = fit(x,d)
+        elif callable(first):
+            fitfun = first(x,d)
             
         if start == 'left':
             d0 = fitfun(mids[0])
@@ -92,7 +98,7 @@ def mids2edges(mids, start='mid', fit='none'):
     
     if any(e[1:] - e[:-1] <= 0):
         warnings.warn('There are zero or negative length bins in the output. '
-                      'Consider using a different fit or start.')
+                      'Consider using a different fit or start.', RuntimeWarning)
                             
     return e
 
@@ -339,7 +345,7 @@ def polyfit_binned(bins, y, yerr, order):
     bins = [[a0, b0], ..., [aM, bM]] are the bin edges
     y = data, the integral of some value over the bins
     
-    return the coefficents of the polynomial ([c0, c1, .. cN]) where N=order
+    return the coefficents of the polynomial ([cN,...,c1,c0]) where N=order
     the covariance matrix (!! not sigma, but sigma**2), and a function that 
     evaluates y and yerr when given a new bin using the maximum likelihood 
     model fit
@@ -391,7 +397,7 @@ def polyfit_binned(bins, y, yerr, order):
             
         return y, yerr
         
-    return c, cov, f
+    return c[::-1], cov[::-1,::-1], f
     
 def argextrema(y,separate=True):
     """Returns the indices of the local extrema of a series. When consecutive 
