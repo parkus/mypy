@@ -167,7 +167,8 @@ def shorten_jumps(vec,maxjump,newjump=None):
     return vec_new, midjump, jumplen
         
 def divvy(ary, bins, keyrow=0):
-    """Divvys up the points in the input vector or array into the indicated 
+    """
+    Divvys up the points in the input vector or array into the indicated 
     bins.
     
     Row keyrow of the array is used to divvy up the array.
@@ -193,7 +194,8 @@ def divvy(ary, bins, keyrow=0):
     return divvied        
 
 def chunkogram(vec, chunksize, weights=None, unsorted=False):
-    """Like chunk_edges, but used when many points have the same value such
+    """
+    Like chunk_edges, but used when many points have the same value such
     that chunks sometimes must contain different numbers of points.
     
     If enough points have the same value, the bin edges would be identical. 

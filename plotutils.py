@@ -83,7 +83,7 @@ def pcolor_reg(x, y, z, **kw):
         raise ValueError("z.shape should be (y.size, x.size)")
     dx = np.diff(x)
     dy = np.diff(y)
-    if not np.allclose(dx, dx[0]) or not np.allclose(dy, dy[0]):
+    if not np.allclose(dx, dx[0], 1e-2) or not np.allclose(dy, dy[0], 1e-2):
         raise ValueError("The grid must be uniform")
 
     if np.issubdtype(z.dtype, np.complexfloating):
