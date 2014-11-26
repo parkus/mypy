@@ -10,6 +10,7 @@ import my_numpy as mnp
 from scipy.interpolate import interp1d
 from math import ceil
 import matplotlib.pyplot as plt
+from scipy.signal import argrelmax
 
 def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     """Coadds spectra of differing wavlength ranges and resolutions according
@@ -127,7 +128,7 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     w = common_grid(welist)
     
     #coadd the spectra (the m prefix stands for master)
-    mfluence, mvar, mweight = [np.zeros(len(w)-1)for i in range(3)]
+    mfluence, mvar, mweight, mflux, merr = np.zeros([5, len(w)-1])
     #loop through each order of each x1d
     for we, flux, err, weight, mask in zip(welist, fluxlist, fluxerrlist, 
                                            weightlist, masklist):
@@ -149,49 +150,52 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
         mweight[i] += addweight
     
     mdw = w[1:] - w[:-1]
-    mflux = mfluence/mweight/mdw
-    merr = np.sqrt(mvar)/mweight/mdw
     mmask = (mweight == 0.0)
+    good = np.logical_not(mmask)
+    mflux[good] = mfluence[good]/mweight[good]/mdw[good]
+    merr[good] = np.sqrt(mvar[good])/mweight[good]/mdw[good]
     mflux[mmask], merr[mmask] = np.nan, np.nan
     return w, mflux, merr, mweight
     
 def common_grid(wavelist):
     """Generates a common wavelength grid from any number of provided grids
-    by employing the lowest resolution of the provided grids covering a given
-    wavelength.
+    by using the lowest resolution grid wherever there is overlap.
+    
+    This is not a great method. Oversampling is still possible. It is fast
+    though. 
     """
     
-    if len(wavelist) == 1:
-        return wavelist[0]
-    
-    #get the edges, centers, and spacings for each wavegrid
-    welist = wavelist
-    dwlist = [we[1:] - we[:-1] for we in welist]
-    wclist = map(mnp.midpts, welist)
-    wmin, wmax = np.min(welist), np.max(welist)
-    
-    #use the central wavelength values to order the spacings into a single vector
-    dw_all, wc_all = dwlist[0], wclist[0]
-    for dw, wc in zip(dwlist[1:], wclist[1:]):
-        i = np.digitize(wc, wc_all)
-        dw_all = np.insert(dw_all, i, dw)
-        wc_all = np.insert(wc_all, i, wc)
+    #succesively add each grid to a master wavegrid
+    #whereever the new one overlaps the old, pick whichever has fewer points
+    we = wavelist[0]
+    for wei in wavelist[1:]:
+        #if no overlap, just app/prepend
+        if we[-1] < wei[0]:
+            we = np.append(we,wei)
+            continue
+        if we[0] > wei[-1]:
+            we = np.append(wei,we)
+            continue
+            
+        #identify where start and end of wei fall in we, and vise versa
+        i0,i1 = np.digitize(wei[[0,-1]], we)
+        j0,j1 = np.digitize(we[[0,-1]], wei)
+        #we[i0:i1] is we overlap with wei, wei[j0:j1] is the opposite
         
-    #identify the relative maxima in the spacings vector and make an 
-    #interpolation function between them
-    _,imax = mnp.argextrema(dw_all)
-    wcint = np.hstack([[wmin],wc_all[imax],[wmax]])
-    dwint = dw_all[np.hstack([[0],imax,[-1]])]
-    dwf = interp1d(wcint, dwint)
-    
-    #construct a vector by beginning at wmin and adding the dw amount specified
-    #by the interpolation of the maxima
-    w = [wmin]
-    while w[-1] < wmax:
-        w.append(w[-1] + dwf(w[-1]))
-    del w[-1]
-    
-    return np.array(w)
+        #pick whichever has fewer points (lower resolution) for the overlap
+        Nwe, Nwei = i1-i0, j1-j0 #no of points for eachch in overlap
+        if Nwe < Nwei:
+            #get pieces of wei that fall outside of we
+            wei_pre, _, wei_app = np.split(wei, [j0,j1])
+            #stack with we. leave off endpts to avoid fractional bins at the
+            #switchover points
+            we = np.hstack([wei_pre[:-1], we, wei_app[1:]])
+        else: #same deal
+            we_pre, _, we_app = np.split(we, [i0,i1])
+            we = np.hstack([we_pre[:-1], wei, we_app[1:]])
+            
+    return we
+            
     
 def identify_continuum(wbins, y, err, function_generator, maxsig=2.0, 
                        emission_weight=1.0, maxcull=0.99, plotsteps=False):

@@ -360,48 +360,20 @@ def rebin(newbins, oldbins, values):
     
     Assumes the value in each bin is the integral of some function over that
     bin, -NOT- the average of the function.
-    
-    Assumes bin edges are monotonically increasing.
     """
     binmin, binmax = np.min(oldbins), np.max(oldbins)
     if any(newbins < binmin) or any(newbins > binmax):
         raise ValueError('New bin edges cannot extend beyond old bin edges.')
     
-    N = len(values)
-    
     #generate cumulative integral value at old bin edges, starting at 0.0 for
     #the left edge of the first bin
-    integral = np.zeros(N+1)
-    integral[0], integral[1:] = 0.0, np.cumsum(values)
+    integral = np.append(0.0, np.cumsum(values))
     
     #interpolate to the value at the new bin edges
     newintegral = np.interp(newbins, oldbins, integral)
     
     #subtract to get the value of the integral just across each bin
     return np.diff(newintegral)
-    
-#    #old bin widths
-#    d = oldbins[1:] - oldbins[:-1]
-#    
-#    #figure out where the newbins fit into the oldbins
-#    i = np.digitize(newbins, oldbins)
-#    
-#    #compute what fraction of the bin the new edge falls within is to the left
-#    #and what fraction is to the right
-#    leftfracs = (oldbins[i[:-1]+1] - newbins[:-1])/d[i[:-1]]
-#    rightfracs = (newbins[1:] - oldbins[i[1:]])/d[i[1:]]
-#    
-#    #use those to determine how  much to add from each side
-#    left = leftfracs*values[i[:-1]]
-#    right = rightfracs*values[i[1:]]
-#    
-#    #now split the values array by the new bin edges
-#    starts, stops = i[:-1], i[1:]-1
-#    splits = lace(starts, stops)
-#    pieces = np.split(values, splits)[1::2]
-#    mid = map(np.sum, pieces)
-#    
-#    return left + mid + right
     
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
