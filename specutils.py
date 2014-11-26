@@ -161,6 +161,9 @@ def common_grid(wavelist):
     wavelength.
     """
     
+    if len(wavelist) == 1:
+        return wavelist[0]
+    
     #get the edges, centers, and spacings for each wavegrid
     welist = wavelist
     dwlist = [we[1:] - we[:-1] for we in welist]
@@ -183,14 +186,12 @@ def common_grid(wavelist):
     
     #construct a vector by beginning at wmin and adding the dw amount specified
     #by the interpolation of the maxima
-    w = np.zeros(ceil((wmax-wmin)/np.min(dw)))
-    w[0] = wmin
-    n = 1
-    while True:
-        w[n] = w[n-1] + dwf(w[n-1])
-        if w[n] > wmax: break
-        n += 1
-    w = w[:n]
+    w = [wmin]
+    while w[-1] < wmax:
+        w.append(w[-1] + dwf(w[-1]))
+    del w[-1]
+    
+    return np.array(w)
     
 def identify_continuum(wbins, y, err, function_generator, maxsig=2.0, 
                        emission_weight=1.0, maxcull=0.99, plotsteps=False):

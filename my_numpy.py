@@ -9,15 +9,77 @@ from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pch
 import matplotlib.pyplot as plt
 import warnings
 
+def lace(a, b, axis=0):
+    """
+    Combine the two arrays by alternating values from each.
+    
+    Parameters
+    ----------
+    a,b : array-like
+        The two arrays to be laced together. Every dimension except that of
+        axis must match. If the lengths along axis differ, the lacing will
+        proceed from element 0 until one of the arrays ends, then the other
+        array will be used for the remainder.
+    axis : int, optional
+        The axis along which to lace.
+    
+    Returns
+    -------
+    c : array
+        The laced arrays, with the same shape of the input arrays except along
+        the lace axis, which will be the sum of the lengths of the two input
+        arrays along that axis.
+    """    
+    a, b = map(np.asarray, [a,b])
+    
+    #prepare empty output array
+    Na, Nb = a.shape[axis], b.shape[axis]
+    ctype = np.result_type(a,b)
+    cshape = list(a.shape)
+    cshape[axis] = Na + Nb
+    c = np.zeros(cshape, ctype)
+    
+    #make the lace axis the first one
+    a, b, c = [np.swapaxes(ary, axis, 0) for ary  in [a,b,c]]
+    
+    #decide how to interleave values from a nd b
+    if Na == Nb:
+        slices = [slice(None,2*Na,2), slice(1,2*Na,2)]
+        arys = [a,b]
+    elif Na < Nb:
+        slices = [slice(None,2*Na,2), slice(1,2*Na,2), slice(2*Na,None)]
+        arys = [a, b[:Na], b[Na:]]
+    else:
+        slices = [slice(None,2*Nb,2), slice(1,2*Nb,2), slice(2*Nb,None)]
+        arys = [a[:Nb], b, a[Nb:]]
+    
+    #put them in
+    for slc, ary in zip(slices,arys):
+        c[slc,...] = ary
+    
+    #return things to the original shape
+    a, b, c = [np.swapaxes(ary, axis, 0) for ary  in [a,b,c]]
+    
+    return c
+
 def mids2edges(mids, start='mid', first='adjacent'):
     """
     Reconstructs bin edges given only the midpoints.
     
     Parameters
     ----------
-    mids : {np.array|list}
+    mids : 1-D array-like
         A 1-D array or list of the midpoints from which bin edges are to be 
         inferred.
+    start : {'left'|'right'|'mid'}, optional
+        left : start by assuming the spacing between the first two midpts
+            is the same as the spacing between the first two bin edges and
+            work from there
+        right : same as above, but using the last two midpoints and working
+            backwords
+        mid : put one bin edge at the middle of the center two midpoints and
+            work outwards. If there is an odd number of midpoints, use the
+            middle midpoint and the one to the left to start.
     first : {float|'adjcacent'|'linear-i'|'linear-x'|function}, optional
         Width of the starting bin to the spacing between the midpoints to extrapolate the
         width of the first or last bin.
@@ -34,16 +96,6 @@ def mids2edges(mids, start='mid', first='adjacent'):
         That function should
         return a fit function (just like scipy's interp1d does), such that if
         result = function(xin,yin), then yout = result(xout) is a valid.
-        
-    start : {'left'|'right'|'mid'}, optional
-        left : start by assuming the spacing between the first two midpts
-            is the same as the spacing between the first two bin edges and
-            work from there
-        right : same as above, but using the last two midpoints and working
-            backwords
-        mid : put one bin edge at the middle of the center two midpoints and
-            work outwards. If there is an odd number of midpoints, use the
-            middle midpoint and the one to the left to start.
     
     Result
     ------
@@ -55,7 +107,7 @@ def mids2edges(mids, start='mid', first='adjacent'):
     mids = np.array(mids)
     N = len(mids)
     e = np.zeros(N+1)
-    if first != 'none' and start == 'mid':
+    if type(first) is not float and first != 'adjacent' and start == 'mid':
         raise ValueError("Start can only be 'mid' if fit == 'none'.")
       
     if type(first) is float:
@@ -181,15 +233,10 @@ def divvy(ary, bins, keyrow=0):
     the vector that were in the bin at each iteration and this was slightly
     faster.
     """
-    list_in, ashape = (type(ary) == list), ary.shape
-    if list_in: ary = np.array(ary)
-    if ary.ndim == 1: ary.resize([1,len(ary)])    
+    ary = np.asarray(ary)
+    if ary.ndim == 1: ary = ary.reshape([1,len(ary)])    
     ivec = np.digitize(ary[keyrow,:], bins)
     divvied = [ary[:, ivec == i] for i in np.arange(1,len(bins))]
-    
-    #return ary to it's original form
-    if list_in: ary = list(ary)
-    if len(ashape) == 1: ary.resize(ashape)
     
     return divvied        
 
@@ -313,26 +360,48 @@ def rebin(newbins, oldbins, values):
     
     Assumes the value in each bin is the integral of some function over that
     bin, -NOT- the average of the function.
+    
+    Assumes bin edges are monotonically increasing.
     """
     binmin, binmax = np.min(oldbins), np.max(oldbins)
     if any(newbins < binmin) or any(newbins > binmax):
         raise ValueError('New bin edges cannot extend beyond old bin edges.')
     
-    #figure out where the newbins fit into the oldbins
-    i = np.digitize(newbins, oldbins)
-    result = np.zeros(len(newbins)-1)
-    d = oldbins[1:] - oldbins[:-1]
-    leftin = i[:-1]
-    rightin = i[1:]-1
-    for n,(l,r) in enumerate(zip(leftin, rightin)): 
-        if l > r:
-            result[n] = (newbins[n+1] - newbins[n])/d[l-1]*values[l-1]
-        else:
-            mid = np.sum(values[l:r])
-            left = (oldbins[l] - newbins[n])/d[l-1]*values[l-1]
-            right = (newbins[n+1] - oldbins[r])/d[r]*values[r] if r < len(d) else 0.0
-            result[n] = left + mid + right
-    return result
+    N = len(values)
+    
+    #generate cumulative integral value at old bin edges, starting at 0.0 for
+    #the left edge of the first bin
+    integral = np.zeros(N+1)
+    integral[0], integral[1:] = 0.0, np.cumsum(values)
+    
+    #interpolate to the value at the new bin edges
+    newintegral = np.interp(newbins, oldbins, integral)
+    
+    #subtract to get the value of the integral just across each bin
+    return np.diff(newintegral)
+    
+#    #old bin widths
+#    d = oldbins[1:] - oldbins[:-1]
+#    
+#    #figure out where the newbins fit into the oldbins
+#    i = np.digitize(newbins, oldbins)
+#    
+#    #compute what fraction of the bin the new edge falls within is to the left
+#    #and what fraction is to the right
+#    leftfracs = (oldbins[i[:-1]+1] - newbins[:-1])/d[i[:-1]]
+#    rightfracs = (newbins[1:] - oldbins[i[1:]])/d[i[1:]]
+#    
+#    #use those to determine how  much to add from each side
+#    left = leftfracs*values[i[:-1]]
+#    right = rightfracs*values[i[1:]]
+#    
+#    #now split the values array by the new bin edges
+#    starts, stops = i[:-1], i[1:]-1
+#    splits = lace(starts, stops)
+#    pieces = np.split(values, splits)[1::2]
+#    mid = map(np.sum, pieces)
+#    
+#    return left + mid + right
     
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
