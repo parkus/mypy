@@ -9,6 +9,91 @@ from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pch
 import matplotlib.pyplot as plt
 import warnings
 
+def quadsum(*args, **kwargs):
+    """Sum of array elements in quadrature.
+    
+    This function is identical to numpy.sum except that array elements are
+    squared before summing and then the sqrt of the resulting sums is returned.
+    
+    The docstring from numpy.sum is reproduced below for convenience (copied 
+    2014-12-09)
+    
+    Parameters
+    ----------
+    a : array_like
+        Elements to sum.
+    axis : None or int or tuple of ints, optional
+        Axis or axes along which a sum is performed.
+        The default (`axis` = `None`) is perform a sum over all
+        the dimensions of the input array. `axis` may be negative, in
+        which case it counts from the last to the first axis.
+
+        .. versionadded:: 1.7.0
+
+        If this is a tuple of ints, a sum is performed on multiple
+        axes, instead of a single axis or all the axes as before.
+    dtype : dtype, optional
+        The type of the returned array and of the accumulator in which
+        the elements are summed.  By default, the dtype of `a` is used.
+        An exception is when `a` has an integer type with less precision
+        than the default platform integer.  In that case, the default
+        platform integer is used instead.
+    out : ndarray, optional
+        Array into which the output is placed.  By default, a new array is
+        created.  If `out` is given, it must be of the appropriate shape
+        (the shape of `a` with `axis` removed, i.e.,
+        ``numpy.delete(a.shape, axis)``).  Its type is preserved. See
+        `doc.ufuncs` (Section "Output arguments") for more details.
+    keepdims : bool, optional
+        If this is set to True, the axes which are reduced are left
+        in the result as dimensions with size one. With this option,
+        the result will broadcast correctly against the original `arr`.
+
+    Returns
+    -------
+    sum_along_axis : ndarray
+        An array with the same shape as `a`, with the specified
+        axis removed.   If `a` is a 0-d array, or if `axis` is None, a scalar
+        is returned.  If an output array is specified, a reference to
+        `out` is returned.
+
+    See Also
+    --------
+    ndarray.sum : Equivalent method.
+
+    cumsum : Cumulative sum of array elements.
+
+    trapz : Integration of array values using the composite trapezoidal rule.
+
+    mean, average
+
+    Notes
+    -----
+    Arithmetic is modular when using integer types, and no error is
+    raised on overflow.
+
+    Examples
+    --------
+    >>> np.sum([0.5, 1.5])
+    2.0
+    >>> np.sum([0.5, 0.7, 0.2, 1.5], dtype=np.int32)
+    1
+    >>> np.sum([[0, 1], [0, 5]])
+    6
+    >>> np.sum([[0, 1], [0, 5]], axis=0)
+    array([0, 6])
+    >>> np.sum([[0, 1], [0, 5]], axis=1)
+    array([1, 5])
+
+    If the accumulator is too small, overflow occurs:
+
+    >>> np.ones(128, dtype=np.int8).sum(dtype=np.int8)
+    -128
+    """
+    args = list(args)
+    args[0] = args[0]**2
+    return np.sqrt(np.sum(*args, **kwargs))
+
 def lace(a, b, axis=0):
     """
     Combine the two arrays by alternating values from each.
@@ -365,9 +450,18 @@ def rebin(newbins, oldbins, values):
     if any(newbins < binmin) or any(newbins > binmax):
         raise ValueError('New bin edges cannot extend beyond old bin edges.')
     
+    #clean out non-finite values (so that the cumulative sum isn't screwed up)
+    bad = np.logical_not(np.isfinite(values))
+    badvals = values[bad]
+    values[bad] = 0.0
+    
     #generate cumulative integral value at old bin edges, starting at 0.0 for
     #the left edge of the first bin
     integral = np.append(0.0, np.cumsum(values))
+    
+    #add bad values back in so that nan's and infinites get propagated into
+    #any new bin that contains one
+    integral[bad] = badvals
     
     #interpolate to the value at the new bin edges
     newintegral = np.interp(newbins, oldbins, integral)

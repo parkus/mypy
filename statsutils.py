@@ -16,12 +16,12 @@ def runstest(x, divider=None, passfail=False):
     Perform the Wald-Wolfowitz runs test.
     
     The Wald-Wolfowitz runs test evaluates the null-hypothesis that the data 
-    are independent and identically distributed within assuming a parametric 
-    form for the underlying probability distribution function of the data.
+    are independent and identically distributed assuming a parametric 
+    form for the underlying probability distribution function of the data [1].
 
     Parameters
     ----------
-    x : list or 1-D numpy array
+    x : 1-D array-like
         The data to be tested.
         
     divider : float, optional
@@ -34,7 +34,7 @@ def runstest(x, divider=None, passfail=False):
         
         If not supplied, the median value of the data is used.  
         
-    passfail : boolean
+    passfail : {True|False}, optional
         If set to true, the function simply returns True if the test rejects
         the null hypothesis to > 95% confidence and False otherwise. This was
         implemented for short data series, where the runs statistic deviates

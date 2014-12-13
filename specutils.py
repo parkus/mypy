@@ -7,10 +7,7 @@ Created on Wed Oct 22 12:51:23 2014
 
 import numpy as np
 import my_numpy as mnp
-from scipy.interpolate import interp1d
-from math import ceil
 import matplotlib.pyplot as plt
-from scipy.signal import argrelmax
 
 def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     """Coadds spectra of differing wavlength ranges and resolutions according
@@ -133,23 +130,23 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     for we, flux, err, weight, mask in zip(welist, fluxlist, fluxerrlist, 
                                            weightlist, masklist):
         #intergolate and add flux onto the master grid
-        dw = we[1:] - we[:-1]
+        dw = np.diff(we)
         fluence, fluerr = flux*dw*weight, err*dw*weight
         fluence[mask], fluerr[mask] = np.nan, np.nan
-        wrange = [np.min(we), np.max(we)]
+        wrange = we[[0,-1]]
         overlap = (np.digitize(w, wrange) == 1)
         wover = w[overlap]
         addflu = mnp.rebin(wover, we, fluence)
         addvar = mnp.rebin(wover, we, fluerr**2)
-        addweight = mnp.rebin(w[overlap], we, weight)/(wover[1:] - wover[:-1])
+        addweight = mnp.rebin(wover, we, weight*dw)/np.diff(wover)
         addmask = np.isnan(addflu)
         addflu[addmask], addvar[addmask], addweight[addmask] = 0.0, 0.0, 0.0
         i = np.nonzero(overlap)[0][:-1]
-        mfluence[i] += addflu
-        mvar[i] += addvar
-        mweight[i] += addweight
+        mfluence[i] = mfluence[i] +  addflu
+        mvar[i] = mvar[i] + addvar
+        mweight[i] = mweight[i] + addweight
     
-    mdw = w[1:] - w[:-1]
+    mdw = np.diff(w)
     mmask = (mweight == 0.0)
     good = np.logical_not(mmask)
     mflux[good] = mfluence[good]/mweight[good]/mdw[good]
@@ -164,7 +161,6 @@ def common_grid(wavelist):
     This is not a great method. Oversampling is still possible. It is fast
     though. 
     """
-    
     #succesively add each grid to a master wavegrid
     #whereever the new one overlaps the old, pick whichever has fewer points
     we = wavelist[0]
@@ -295,6 +291,6 @@ def rebin(newedges, oldedges, flux, error):
     interror = error*dwold
     newintflux = mnp.rebin(newedges, oldedges, intflux)
     newintvar = mnp.rebin(newedges, oldedges, interror**2)
-    newinterror = mnp.sqrt(newintvar)
+    newinterror = np.sqrt(newintvar)
     return newintflux/dwnew, newinterror/dwnew
     
