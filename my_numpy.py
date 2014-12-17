@@ -9,6 +9,78 @@ from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pch
 import matplotlib.pyplot as plt
 import warnings
 
+def bracket(a, v):
+    """
+    return the indices of the two values in vector a that would bracket value v
+    """
+    match = (a == v)
+    if sum(match):
+        return np.nonzero(match)[0]
+    else:
+        i = np.searchsorted(a, v)
+        if i == 0 or i == len(a):
+            raise ValueError('Outside of phoenix grid range.')
+        else:
+            return [i-1, i]
+
+def sliminterpN(pt, grids, datafunc):
+    """
+    A means of computing an N-d linear interpolation without having to load a
+    huge N-d data array into memory.
+    
+    Initially written for use in interpolating spectra from the a model spectra
+    database.
+    
+    Parameters
+    ----------
+    pt : 1-D array-like
+        The value of the point where interpolation of the data is to occur.
+    grids : list of 1-D array-like objects
+        The grids over which data is available, in the same order as the values
+        in pt.
+    datafunc : function
+        A function that will return the data when the indices of the grid values are input
+        (separately, in order -- not as a list). Data
+        can be anything that permits linear comibination with normal arithmetic
+        operators.
+    
+    Returns 
+    -------
+    result : same type as returned by datafunc
+        The data interpolated to pt.
+    """     
+    #function to return interpolated value one level down the hierarchy
+    def idata(i):
+        #if we are down to one dimension, return the data
+        if len(pt) == 1:
+            return datafunc(i)
+        
+        else:
+            newfunc = lambda *args: datafunc(i, *args)
+            return sliminterpN(pt[1:], grids[1:], newfunc)
+    
+    #retrieve the bracketing values in the grid
+    bkti = bracket(grids[0], pt[0])
+    
+    #if pt[0] happened to fall right on a grid value, use that data
+    if len(bkti) == 1:
+        return idata(bkti[0])
+    
+    #compute the factors by which the data from each point on the grid will
+    #be mutliplied before summing
+    a = grids[0][bkti]
+    d = a[1] - a[0]
+    fac0 = (a[1] - pt[0])/d
+    fac1 = 1.0 - fac0
+    
+    #get the data at the bracketing values, interpolated over the other grid
+    #values
+    bktdata = map(idata, bkti)
+    
+    #interpolate
+#    return (bktdata[1] - bktdata[0])/d*(pt[0] - a[0]) + bktdata[0]
+    return bktdata[0]*fac0 + bktdata[1]*fac1
+
 def quadsum(*args, **kwargs):
     """Sum of array elements in quadrature.
     
