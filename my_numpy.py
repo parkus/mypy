@@ -25,7 +25,7 @@ def bracket(a, v):
 
 def sliminterpN(pt, grids, datafunc):
     """
-    A means of computing an N-d linear interpolation without having to load a
+    A means of computing an N-linear interpolation without having to load a
     huge N-d data array into memory.
     
     Initially written for use in interpolating spectra from the a model spectra
@@ -78,7 +78,6 @@ def sliminterpN(pt, grids, datafunc):
     bktdata = map(idata, bkti)
     
     #interpolate
-#    return (bktdata[1] - bktdata[0])/d*(pt[0] - a[0]) + bktdata[0]
     return bktdata[0]*fac0 + bktdata[1]*fac1
 
 def quadsum(*args, **kwargs):
