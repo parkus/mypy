@@ -586,7 +586,7 @@ def polyfit_binned(bins, y, yerr, order):
     
     #some prelim calcs. all matrices are (N+1)xM
     def prelim(bins, M):
-        a, b = bins[0], bins[1]
+        a, b = bins[:,0], bins[:,1]
         apow = np.array([a**(n+1) for n in range(N+1)])
         bpow = np.array([b**(n+1) for n in range(N+1)])
         bap = bpow - apow
