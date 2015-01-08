@@ -312,10 +312,9 @@ def mids2edges(mids, start='mid', first='adjacent'):
 
 def block_edges(ary):
     """
-    Gives the slice indices of the start and end for each block of True values
-    in a boolean array.
+    Returns a list of slices each identifying a block of true and false data.
     """
-    a = np.hstack([[False],np.array(ary,np.int0),[False]])
+    a = np.insert(ary, [0, len(ary)], [False, False])
     chng = a[1:] - a[:-1]
     beg, = np.nonzero(chng == 1)
     end, = np.nonzero(chng == -1)
