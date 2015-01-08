@@ -200,7 +200,7 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median',
         anomalies. When the test returns a value below this level, iteration
         stops.
     
-    trendfit: string or functions
+    trendfit: string or function
         Fits a trend to the data and returns the value of the trend at each pt.
         
     plotsteps: boolean or function
@@ -233,7 +233,7 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median',
     builtintrends = {'median' : np.median, 'mean':np.mean}
     if type(trendfit) is str: 
         fitfunc = builtintrends[trendfit.lower()]
-        def trendfit(x,good): 
+        def trendfit(good): 
             value = fitfunc(x[good])
             return np.ones(x.shape)*value
     
@@ -256,7 +256,7 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median',
     counter = 0
     while True:
         #fit the retained data
-        fit = trendfit(x, good)
+        fit = trendfit(good)
         x1 = x - fit
         
         #adjust previous groups based on new trend through good data
