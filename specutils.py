@@ -340,7 +340,9 @@ def plot(wbins, f, *args, **kwargs):
     *args :
         arguments to be passed to plot
     *kwargs :
-        keyword arguments to be passed to plot
+        keyword arguments to be passed to plot. consider passing color to
+        prevent different sections of the spectrum being plotted with different
+        colors
     
     Returns
     -------
