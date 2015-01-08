@@ -5,12 +5,7 @@ Created on Wed Apr 30 11:43:52 2014
 @author: Parke
 """
 import numpy as np
-from math import sqrt, pi
-root2 = sqrt(2.0)
 from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pchip_interpolate
-from scipy import sparse
-from scipy.sparse.linalg import spsolve
-from scipy.linalg import solve
 import matplotlib.pyplot as plt
 import warnings
 
@@ -654,107 +649,6 @@ def argextrema(y,separate=True):
     else:
         argext = np.nonzero(curve_sign != 0)[0] + 1
         return argext
-
-def exp_filter(x, y, cutoff, passtype):
-    """
-    Very rapidly applies an exponential filter, high or low pass, to a set 
-    of unevenly spaced data. Follows the prescription suggested by 
-    Rybicki and Press (1995) http://adsabs.harvard.edu/abs/1995PhRvL..74.1060R 
-          
-    Important: For high pass filtering, data gaps much longer than the period of the 
-    cutoff frequency will be shortened for the purposes of filtering to avoid 
-    arithmetic overflow.
-           
-    Parameters
-    ----------
-        x : 1-D array-like
-            The independent data (e.g. time)
-        y : 1-D array-like
-            The dependent data (e.g. signal).
-        cutoff : float
-            The 3 dB cutoff frequency in units of 1/[x].
-        passtype : {'hi'|'high'|'lo'|'low'}
-            Specifies high or low pass filter.
-            
-    Result
-    ------
-          f: The filtered y data.
-
-    Example
-    --------
-    Simulate evenly spaced data with a low and high frequency and filter each out.
-      
-    #generate unevenly spaced data points
-    import numpy as np
-    N = 200
-    dt = np.abs(np.random.rand(N)) #get random point spacings
-    t = np.cumsum(dt)
-    
-    #simulate signal
-    y = np.sin(t*2*np.pi/(N/20.0)) #first a high-freq signal with a period of N/20
-    y += 2*np.sin(t*2*np.pi/N) #then a low-freq signal with a period of N
-    
-    #choose cutoff frequency between high and low-freq signals
-    cutoff = 1.0/(N/4.0)
-    
-    #high and low pass filter the data
-    flow = exp_filter(t, y, cutoff, 'low')
-    fhi = exp_filter(t, y, cutoff, 'high')
-    
-    Notes
-    -----
-    I'm all but certain the Rybicki and Press paper has the appropriate
-    factors for scaling the cutoff frequency to the 3 dB point according to
-    whether the filter is high or low pass reversed.
-    
-    I suspect another typo in the Rybicki paper. I belive the lower diagonal
-    of the T matrix (eq. 2) should be -e_i not -e_1. The latter does not give sensible
-    results.
-    
-    I've found that the filter performs flawlessly even when the accuracy condition
-    specified by Rybicki and Press is not met (which has to do with whether 
-    approximating the underlying function as linear between each points is
-    good or not).
-    """
-    
-    x, y = map(np.asarray, [x, y])
-    
-    if len(x) != len(y):
-        raise ValueError('The x and y vectors must be the same length.')
-        
-    if passtype not in ['hi', 'high', 'lo', 'low']:
-        raise ValueError("passtype must be one of 'hi', 'high', 'lo', or 'low'.")
-    h = passtype in ['hi', 'high']
-    
-    #shorten overly large gaps (has little effect on simulated data)
-    gaps = np.diff(x)
-    if h:
-        maxgap = 10.0/cutoff
-        biggaps = (gaps > maxgap)
-        if sum(biggaps):
-            gaps[biggaps] = maxgap
-            x = np.append([x[0]], x[0] + np.cumsum(gaps))
-    
-    k = root2*pi*(root2 - 1.0)**0.25 if h else root2*pi*(root2 - 1.0)**-0.25
-    w = k*(1 + 1j)*cutoff*gaps
-    
-    if any(np.real(w)) > 1.0:
-        warnings.warn("Accuracy condition of W << 1 specified in Rybicki & "
-                      "Press 1995 not met. Proceeding anyway.")
-       
-    r = np.exp(-w)
-    e = (r**-1 - r)**-1
-    diag = np.hstack([[1.0 + r[0]*e[0]], 
-                      1.0 + r[:-1]*e[:-1] + r[1:]*e[1:],
-                      [1.0 + r[-1]*e[-1]]])
-    T = sparse.diags([-e, diag, -e], [-1, 0, 1], format='csc')
-    s = 0.5*np.hstack([[(y[0] - y[1])/w[0]],
-                       (y[1:-1] - y[2:])/w[1:] + (y[1:-1] - y[:-2])/w[:-1],
-                       [(y[-1] - y[-2])/w[-1]]])
-    T = T.todense()
-    u = spsolve(T, s)
-    f = np.real(u) if h else y - np.real(u)
-    return f
         
 def emd(t,y,Nmodes=None):
     """Decompose function into "intrinsic modes" using empirical mode
