@@ -7,7 +7,9 @@ Created on Wed Oct 22 12:51:23 2014
 
 import numpy as np
 import my_numpy as mnp
+import statsutils as stats
 import matplotlib.pyplot as plt
+from specutils_bkwd import *
 
 def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     """Coadds spectra of differing wavlength ranges and resolutions according
@@ -193,89 +195,116 @@ def common_grid(wavelist):
     return we
             
     
-def identify_continuum(wbins, y, err, function_generator, maxsig=2.0, 
-                       emission_weight=1.0, maxcull=0.99, plotsteps=False):
-    #TODO: modify this to use mypy.stats.flag_anomalies
-    if type(plotsteps) == bool:
-        plotbelow = np.inf if plotsteps else 0.0
-    else:
-        plotbelow = plotsteps
-        plotsteps = True
-    if plotsteps: plt.ioff()
+def split(wbins, y, err, trendfit=4, linecut=0.05, contcut=0.05, maxiter=1000,
+          plotsteps=False):
+    """
+    Split a spectrum into its continuum, emission, absorption, and intermediate
+    components.
+    
+    The function fits a trend to the data, then measures how much each run
+    of point consecuatively above or below the trend depart from it using
+    chi2. The run with the largest chi2 value is removed and a trend is again
+    fitted to the remaining data. At each step, the remaining data are tested
+    for consistency with a gaussian distribution using the Shapiro-Wilks
+    test. Different p-values for this test determine
+    which runs are identified as lines, which as continuum, and which as
+    something in between (see parameters below for elaboration).
+    
+    Parameters
+    ----------
+    wbins : 2D array-like, shape 2xN
+        the left (wbins[0]) and right (wbins[1]) edges of the bins in the 
+        spectrum
+    y : 1D array-like, length N
+        spectrum data
+    err : 1D array-like, length N
+        error on the spectrum data
+    trendfit : {int|function}, optional
+        Trend to be fit and removed from the data.
+        int : order of a polynomial fit to be used
+        function : user-defined function that returns the fit values at the
+            data points when given a boolean array identifying which points to
+            fit
+    linecut : float
+        The p-value of the shapiro-wilks test at which to record the flagged
+        runs as lines.
+    contcut : float
+        The p-value of the shapiro-wilks test at which to record the remaining
+        (unflagged) data as continuum. Specifying a value that is greater
+        than linecut means some data may be identified as belonging to neither
+        line or continuum regions. This is the "intermediate" data.
+    maxiter : int
+        Throw an error if this many iterations pass.
+    plotsteps : plot the flagged and unflagged data at each iteration
+    
+    Returns
+    -------
+    flags : 1D int array, length N
+        An array with values from 0-3 flagging the data as 0-unflagged
+        (intermediate), 1-emission, 2-absorption, 3-continuum. Use the
+        flags2ranges function to convert these to wavelength start and end
+        values.
+    """
     if len(wbins) != len(y):
         raise ValueError('The shape of wbins must be [len(y), 2]. These '
                          'represent the edges of the wavelength bins over which '
                          'photons were counted (or flux was integrated).')
-    wbins, y, err = map(np.array, [wbins, y, err])
-    Npts = len(y)
+    wbins, y, err = map(np.asarray, [wbins, y, err])
+    N = len(y)
+    flags = np.zeros(y.shape, 'i1')
     
-    if plotsteps:
-        wave = (wbins[:,0] + wbins[:,1])/2.0
-        wbinsin, wavein, yin= wbins, wave, y
-        
-    while True:
-        #fit to the retained data
-        f = function_generator(wbins, y, err)
-        
-        #count the runs
-        expected = f(wbins)
-        posneg = (y > expected)
-        run_edges = ((posneg[1:] - posneg[:-1]) !=0)
-        Nruns = np.sum(run_edges) + 1
-        
-        #compute the PTE for the runs test
-        N = len(y)
-        Npos = np.sum(posneg)
-        Nneg = N - Npos
-        mu = 2*Npos*Nneg/N + 1
-        var = (mu-1)*(mu-2)/(N-1)
-        sigruns = abs(Nruns - mu)/np.sqrt(var)
-        
-        #if the fit passes the runs test, then return the good wavelengths
-        if sigruns < maxsig:
-            non_repeats = (wbins[:-1,1] != wbins[1:,0])
-            w0, w1 = wbins[1:,0][non_repeats], wbins[:-1,1][non_repeats]
-            w0, w1 = np.insert(w0, 0, wbins[0,0]), np.append(w1, wbins[-1,1])
-            return np.array([w0,w1]).T
-        else:
-            #compute the chi2 PTE for each run
-            iedges = np.concatenate([[0], np.nonzero(run_edges)[0]+1, [len(run_edges)+1]]) #the slice index
-            chiterms = ((y - expected)/err)**2
-            chisum = np.cumsum(chiterms)
-            chiedges = np.insert(chisum[iedges[1:]-1], 0, 0.0)
-            chis =  chiedges[1:] - chiedges[:-1]
-            DOFs = (iedges[1:] - iedges[:-1])
-            sigs = abs(chis - DOFs)/np.sqrt(2*DOFs)
-            if emission_weight != 1.0:
-                if posneg[0] > 0: sigs[::2] = sigs[::2]*emission_weight
-                else: sigs[1::2] = sigs[1::2]*emission_weight
+    #if polynomial fit, make the appropriate trendfit function
+    if type(trendfit) is int:
+        polyorder = trendfit
+        def trendfit(good):
+            _wbins, _y, _err = wbins[:,good], y[good], err[good]
+            fun = mnp.polyfit_binned(_wbins - w0, _y, _err, polyorder)[1]
+            return fun(wbins - w0)[0]
             
-            good = np.ones(len(y), bool)            
-            good[np.argmax(sigs)] = False #mask out the run with the smallest PTE
-            keep = np.concatenate([[g]*d for g,d in zip(good, DOFs)]) #make boolean vector
-            
-            if plotsteps and (sigruns < plotbelow):
-                plt.plot(wavein, yin)
-                plt.plot(wavein,f(wbinsin),'k')
-                plt.plot(wave,y,'g.')
-                trash = np.logical_not(keep)
-                plt.plot(wave[trash], y[trash], 'r.') 
-                ax = plt.gca()
-                plt.text(0.8, 0.9, '{}'.format(sigruns), transform=ax.transAxes)
-                plt.show()
-            if plotsteps: wave = wave[keep]
-            wbins, y, err = wbins[keep], y[keep], err[keep] 
-        
-        if float(len(y))/Npts < (1.0 - maxcull):
-            raise ValueError('More than maxcull={}% of the data has been '
-                             'removed, but the remaining data and associated '
-                             'fit is still not passing the Runs Test. Consider '
-                             'checking that the fits are good, relaxing '
-                             '(increasing) the maxsig condition for passing '
-                             'the Runs Test, or increasing maxcull to allow '
-                             'more data to be masked out.')
+    #identify lines
+    lines = stats.flag_anomalies(y, test='sw', tol=linecut, trendfit=trendfit,
+                                 plotsteps=plotsteps, maxiter=maxiter)
+    trend = trendfit(~lines)
+    positive = y > trend 
+    flags[lines & positive] = 1 #emission
+    flags[lines & ~positive] = 2 #absoprtion
+    
+    #identify continuum
+    #make new trendfit to handle only the retained data
+    cullmap = np.nonzero(~lines)[0] #maps retained data into all data
+    def newtrendfit(newgood):
+        good = np.zeros(y.shape, bool)
+        good[cullmap[newgood]] = True
+        return trendfit(good)
+    intmd = stats.flag_anomalies(y[~lines], test='sw', tol=contcut, 
+                                 trendfit=newtrendfit, plotsteps=plotsteps, 
+                                 maxiter=maxiter)
+    flags[cullmap[~intmd]] = 3 #continuum
+    
+    return flags
+    
+def flags2ranges(wbins, flags):
+    """
+    Identifies and returns the start and end wavelengths for consecutive runs
+    of data with the same flag values.
+    
+    Primarily intended for use with splitspec.
+    
+    Returns
+    -------
+    ranges : list of 2xN arrays
+        start and end wavelengths for the runs of each flag value (0 to 
+        max(flags))
+    """
+    ranges = []
+    for i in range(np.max(flags)):
+        edges = mnp.block_edges(flags == i)
+        left = wbins[0, edges[:-1]]
+        right = wbins[1, edges[1:]]
+        ranges.append(np.vstack([left, right]))
+    return ranges
                              
-def rebin(newedges, oldedges, flux, error):
+def rebin(newedges, oldedges, flux, error, flags=None):
     """
     Rebin a spectrum given the edges of the old and new wavelength grids.
     
@@ -292,5 +321,9 @@ def rebin(newedges, oldedges, flux, error):
     newintflux = mnp.rebin(newedges, oldedges, intflux)
     newintvar = mnp.rebin(newedges, oldedges, interror**2)
     newinterror = np.sqrt(newintvar)
-    return newintflux/dwnew, newinterror/dwnew
+    result = [newintflux/dwnew, newinterror/dwnew]
+    if flags is not None:
+        newflags = mnp.rebin_or(newedges, oldedges, flags)
+        result.append(newflags)
+    return result
     
