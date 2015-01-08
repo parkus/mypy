@@ -250,15 +250,15 @@ def split(wbins, y, err, trendfit=4, linecut=0.05, contcut=0.05, maxiter=1000,
                          'represent the edges of the wavelength bins over which '
                          'photons were counted (or flux was integrated).')
     wbins, y, err = map(np.asarray, [wbins, y, err])
-    N = len(y)
     flags = np.zeros(y.shape, 'i1')
     
     #if polynomial fit, make the appropriate trendfit function
     if type(trendfit) is int:
         polyorder = trendfit
         def trendfit(good):
-            _wbins, _y, _err = wbins[:,good], y[good], err[good]
-            fun = mnp.polyfit_binned(_wbins - w0, _y, _err, polyorder)[1]
+            w0 = (wbins[0,0] + wbins[-1,-1])/2.0
+            _wbins, _y, _err = wbins[good,:], y[good], err[good]
+            fun = mnp.polyfit_binned(_wbins - w0, _y, _err, polyorder)[2]
             return fun(wbins - w0)[0]
             
     #identify lines
@@ -327,3 +327,39 @@ def rebin(newedges, oldedges, flux, error, flags=None):
         result.append(newflags)
     return result
     
+def plot(wbins, f, *args, **kwargs):
+    """
+    Plot a spectrum as a stairstep curve, preserving gaps in the data.
+    
+    Parameters
+    ----------
+    wbins : 2-D array-like
+        Wavlength bin edges as an Nx2 array.
+    f : 1-D arra-like
+        Spectral data to plot, len(f) == N.
+    *args :
+        arguments to be passed to plot
+    *kwargs :
+        keyword arguments to be passed to plot
+    
+    Returns
+    -------
+    plts : list
+        List of plot objects.
+    """
+    #split the spectrum at any gaps
+    isgap = ~np.isclose(wbins[0,1:], wbins[1,:-1])
+    gaps = np.nonzero(isgap)[0] + 1
+    wbinlist = np.split(wbins, gaps, 1)
+    flist = np.split(f, gaps)
+    
+    plts = []
+    for [w0, w1], f in zip(wbinlist, flist):        
+        #make vectors that will plot as a stairstep
+        w = mnp.lace(w0, w1)
+        f = mnp.lace(f, f)
+        
+        #plot stairsteps
+        plts.append(plt.plot(w, f, *args, **kwargs))
+    
+    return plts
