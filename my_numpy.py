@@ -310,6 +310,43 @@ def mids2edges(mids, start='mid', first='adjacent'):
                             
     return e
 
+def splitsum(ary, indices):
+    """
+    Splits an array and sums values in each section.
+    
+    Parameters
+    ----------
+    ary : 1-D array-like
+        Array to be divided into sub-arrays.
+    indices : 1-D array-like
+        Integers giving the slice indices for splitting the array.
+        
+    Returns
+    -------
+    sums : 1-D array
+        An array containg the sum of each section of the split array. len(sums)
+        == len(indices) + 1
+    """
+    if ary.ndim > 1:
+        raise NotImplementedError("Can only hande 1-D arrays at the moment "
+        "because I'm not sure how to generalize this to an n-dim case.")
+    
+    #add begging and end to the indices and make sure none are negative to
+    #avoid wraparound
+    indices = np.insert(indices, [0, len(indices)], [0, len(ary)])
+    neg = (indices < 0)
+    indices[neg] = len(ary) + indices[neg]
+    
+    #beginning and end of each block
+    begs = indices[:-1]
+    ends = indices[1:]
+    
+    #cumulative sums, starting with zero
+    cs = np.insert(np.cumsum(ary), 0, 0.0)
+    
+    return cs[ends] - cs[begs]
+    
+
 def block_edges(ary):
     """
     Returns a list of slices each identifying a block of true and false data.
