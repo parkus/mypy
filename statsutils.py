@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import shapiro, norm
 from math import sqrt
-from my_numpy import block_edges
+from mypy.my_numpy import splitsum
 
 def runstest(x, divider=None, passfail=False):
     """
@@ -76,7 +76,7 @@ def runstest(x, divider=None, passfail=False):
         if passfail:
             return z > 1.96
         else:
-            p = 2*norm.cdf(z)
+            p = 2*(1 - norm.cdf(z))
             return z, p
             
     # Otherwise, use table lookup
@@ -171,7 +171,7 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median',
         to supply a user-defined function enables such things as fitting and 
         removing a trend from the data prior to applying a statistical test. 
         Functions must accept only a 1-D boolean numpy array identifying the
-        flagged data (i.e. the function must know about the data independent of
+        unflagged data (i.e. the function must know about the data independent of
         flag_anomalies). This is because the user may want to include data,
         errors, independent data, etc. in the function, in which case the
         unflagged values of each can be consistently selected using flags as a 
@@ -226,8 +226,7 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median',
                     'shapiro':shapiro, 'sw':shapiro}
     if type(test) is str: 
         testfunc = builtintests[test.lower()]
-        def test(x,flags): 
-            good = np.logical_not(flags)
+        def test(x,good): 
             return testfunc(x[good])[1]
     
     builtintrends = {'median' : np.median, 'mean':np.mean}
@@ -250,68 +249,69 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median',
     
     n = len(x)
     
-    #ITERATIVELY IDENTIFY ANOMALIES
+    #ITERATIVELY FIT AND FIND ANOMALIES
     #--------------------------------------------------------------------------    
     good = np.ones(n, bool)
+    oldgood = np.ones(n, bool)
+#    cut = np.inf
     counter = 0
     while True:
         #fit the retained data
         fit = trendfit(good)
         x1 = x - fit
         
-        #adjust previous groups based on new trend through good data
-        #----------------------------------------------------------------------
-        pospts = (x1 > 0)
-        flags = np.logical_not(good)
-        if np.sum(flags) > 0:
-            begs,ends = block_edges(flags)
-            for i0,i1 in zip(begs,ends):
-                #is the peak of the anomaly positive?
-                relargmax = np.argmax(abs(x1[i0:i1]))
-                absargmax = relargmax + i0
-                pos = pospts[absargmax]
-                
-                #delete the anomaly
-                good[i0:i1] = True
-                
-                #"creep" the edges of the anomaly in or out according to its new
-                #position relative to the trend
-                #TODO: cythonize?
-                while i0-1 > 0 and pospts[i0-1] == pos: i0 -= 1
-                while i0+1 < i1 < n and pospts[i0+1] != pos: i0 += 1
-                while i1-2 > i0 > 0 and pospts[i1-2] != pos: i1 -= 1
-                while i1 < n and pospts[i1] == pos: i1 += 1
-                    
-                #reset the anomaly with adjusted edges
-                good[i0:i1] = False
-        
         #check if statistical test is passed
-        p = test(x,flags)
-        if p > tol:
-            return flags
+#        p = test(x,good)
+#        if p > tol:
+#            return ~good
         
         #plot if desired
-        if plotsteps is not False:
-            plt.ioff()
-            plotsteps(x)
-            plt.show()
-            stop = raw_input("p = {}\nStop? ('y' to stop, anything to "
-                             "continue)".format(p))
-            if stop == 'n': return
-                
-        #identify next largest anomaly
+#        if plotsteps is not False:
+#            #FIXME: doesn't seem to work in Spyder iPython
+##            plt.ioff()
+#            plotsteps(x, good)
+#            plt.show()
+#            stop = raw_input("p = {}\nStop? ('y' to stop, anything to "
+#                             "continue)".format(p))
+#            if stop == 'y': return
+        
+        #IDENTIFY ANOMALIES UNTIL TEST IS PASSED  
         #----------------------------------------------------------------------
+        #sum deviations over each run of positive or negative points
+        pospts = (x1 > 0)
+        splits = np.nonzero(pospts[1:] - pospts[:-1])[0] + 1
         ptdevs = metric(x1)
-        edges = [0] + list(np.nonzero(pospts[1:] - pospts[:-1])[0] + 1) + [n]
-        runs = zip(edges[:-1],edges[1:])
-        deviations = np.zeros(len(runs))
-        for i,run in enumerate(runs):
-            j0,j1 = run
-            mid = (j0 + j1)/2
-            deviations[i] = np.sum(ptdevs[j0:j1]) if good[mid] else 0.0
-        anmly = np.argmax(deviations)
-        j0,j1 = runs[anmly]
-        good[j0:j1] = False
+        deviations = splitsum(ptdevs, splits)
+    
+        begs = np.insert(splits, 0, 0)
+        ends = np.append(splits, n)    
+        while True:
+            p = test(x, good)
+            if p > tol:
+                break
+            i = np.argmax(deviations)
+            deviations[i] = 0.0
+            good[begs[i]:ends[i]] = False
+            
+        if np.all(good == oldgood):
+            return ~good
+        
+        oldgood = good
+        good = np.ones(n, bool)
+        
+#        #flag all anomalies over the cut
+#        begs = np.insert(splits, 0, 0)
+#        ends = np.append(splits, n)
+#        anomalies = deviations > cut
+#        args = np.nonzero(anomalies)[0]
+#        for i in args:
+#            good[begs[i]:ends[i]] = False
+#            
+#        #then flag the next biggest anomaly and revise the cut
+#        deviations[anomalies] = 0.0
+#        i = np.argmax(deviations)
+#        good[begs[i]:ends[i]] = False
+#        cut == deviations[i]
         
         counter += 1
         if counter > maxiter:
