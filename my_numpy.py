@@ -638,7 +638,7 @@ def polyfit_binned(bins, y, yerr, order):
     
     #build the LHS coefficient matrix
     nmat = bap/var #N+1xM (n,m)
-    kmat = np.transpose(bap)*np.transpose(frac) #MxN+1 (m,k)
+    kmat = bap.T*frac.T #MxN+1 (m,k)
     lhs = np.dot(nmat,kmat)
     
     #solve for the polynomial coefficients
@@ -659,7 +659,7 @@ def polyfit_binned(bins, y, yerr, order):
         
         #errors
         T = bap*frac
-        yvar = np.dot(np.transpose(T), np.dot(cov, T))
+        yvar = np.dot(T.T, np.dot(cov, T))
         yerr = np.sqrt(np.diagonal(yvar))
             
         return y, yerr
