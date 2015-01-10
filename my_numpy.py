@@ -659,8 +659,11 @@ def polyfit_binned(bins, y, yerr, order):
         
         #errors
         T = bap*frac
-        yvar = np.dot(T.T, np.dot(cov, T))
-        yerr = np.sqrt(np.diagonal(yvar))
+        cT = np.dot(cov, T)
+        #to avoid memory overflow, compute diagonal elements directly instead
+        #of dotting the matrices
+        yvar = np.sum(T*cT, 0)
+        yerr = np.sqrt(yvar)
             
         return y, yerr
         
