@@ -6,9 +6,8 @@ Created on Thu Oct 23 10:46:02 2014
 """
 from numpy import median, sum, nan, array
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.stats import shapiro, norm
-from math import sqrt
+from math import sqrt, ceil
 from mypy.my_numpy import splitsum
 
 def runstest(x, divider=None, passfail=False):
@@ -136,7 +135,8 @@ def runstest(x, divider=None, passfail=False):
             hi, lo = map(array, [hi, lo])
             return (r > hi[n1,n2] or r < lo[n1,n2])
             
-def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median'):
+def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median',
+                   maxiter=10000):
     """
     Identifies groups of statistically anomalous data.
     
@@ -185,7 +185,7 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median'):
         The probability to exceed above which to accept the unflagged data as 
         containing no anomalies.
     
-    trendfit: string or function
+    trendfit : string or function
         Trend to fit and subtract from the unflagged data at each iteration.
         
         String input can be used to specify one of the following built-in
@@ -196,6 +196,10 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median'):
         Function input allows the user to define a custom trend. The function
         must accept only a boolean vector identifying the UNflagged data as
         input and return the value of the trend at each data point.
+        
+    maxiter : int, optional
+        Limits the number of iterations alloweed. Error is thrown if this number
+        is exceeded.
                 
     Returns
     -------
@@ -205,6 +209,16 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median'):
     Modification History
     --------------------
     2014-10-23 written by Parke Loyd
+    """
+    """
+    Bad decisions:
+        - "Creeping" in or out the edges of the anomalies after each new trendfit:
+            the requisite for loops are SLOW. Way faster to just refind the
+            anomalies using array operations.
+        - iteratively flagging anoms, then refitting and repeating until no
+            new points are identified. Since the first fit is high biased due
+            to the big anomalies, lots of the "good" data is flagged and excluded
+            from future fits. better to refit after each anom is removed.
     """
     
     # PARSE THE INPUT
@@ -232,33 +246,62 @@ def flag_anomalies(x, test='runs', metric='chi2', tol=0.05, trendfit='median'):
     
     #ITERATIVELY FIT AND FIND ANOMALIES
     #--------------------------------------------------------------------------    
+    counter = 0
     good = np.ones(n, bool)
-    oldgood = np.ones(n, bool)
+    alltrue = np.ones(n, bool)
+#    fac = 5.0
+#    dfac = 1.0
+    Nanom, Nanom_old = 0, 0
+    Nadd = 50
+    pold = 0.0
     while True:
         #fit the retained data
         fit = trendfit(good)
         x1 = x - fit
+    
+        #check if statistical test is passed
+        pnew = test(x1, good)
+        if Nadd <= 1 and pnew >= tol and pold < tol:
+#        if Nanom == Nanom_old + 1 and pnew >= tol and pold < tol:
+            return ~good
         
+        #IDENTIFY ANOMALIES UNTIL TEST IS PASSED  
+        #----------------------------------------------------------------------    
         #sum deviations over each run of positive or negative points
         pospts = (x1 > 0)
         splits = np.nonzero(pospts[1:] - pospts[:-1])[0] + 1
         ptdevs = metric(x1)
         deviations = splitsum(ptdevs, splits)
         
-        #succesively remove runs in order of deviation magnitude until the
-        #p-value is as desired
-        begs = np.insert(splits, 0, 0)
-        ends = np.append(splits, n)    
-        while True:
-            p = test(x1, good)
-            if p >= tol:
-                break
-            i = np.argmax(deviations)
-            deviations[i] = 0.0
-            good[begs[i]:ends[i]] = False
+        #identify...
+#        Nanom_old = Nanom
+#        if (pnew < tol) != (pold < tol): dfac = dfac/2.0
+#        fac = fac - dfac if pnew < tol else fac + dfac
+#        anomalies = (deviations > fac*np.median(deviations))
+#        Nanom = np.sum(anomalies)
         
-        #exit if no new points were flagged
-        if np.all(good == oldgood):
-            return ~good
-        oldgood = good
-        good = np.ones(n, bool)
+        Nruns = len(deviations)
+        if (pnew < tol) != (pold < tol): Nadd = ceil(Nadd/2.0)
+#        Nadd = ceil((Nruns - Nanom)*fac)
+        Nanom = Nanom + Nadd if pnew < tol else Nanom - Nadd
+        if Nruns < Nanom:
+            Nanom = Nruns - Nadd
+            
+        order = np.argsort(deviations)
+        indices = np.arange(len(deviations))
+        sorted_indices = indices[order]
+        anomalies = sorted_indices[-Nanom:]
+        
+        #flag all anomalies
+        #split a vector of all True values up by run
+        runs = np.array(np.split(alltrue, splits))
+        #then mark the anomalies as false
+        runs[anomalies] = runs[anomalies]*False
+        #and reconstruct the vector
+        good = np.hstack(runs)
+        
+        pold = pnew
+        
+        counter += 1
+        if counter > maxiter:
+            raise ValueError('Exceeded allowable number of iterations.')
