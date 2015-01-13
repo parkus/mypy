@@ -349,9 +349,10 @@ def splitsum(ary, indices):
 
 def block_edges(ary):
     """
-    Returns a list of slices each identifying a block of true and false data.
+    Returns the beginning and end slice index of each block of true values.
     """
     a = np.insert(ary, [0, len(ary)], [False, False])
+    a = a.astype('i1')
     chng = a[1:] - a[:-1]
     beg, = np.nonzero(chng == 1)
     end, = np.nonzero(chng == -1)
@@ -373,7 +374,7 @@ def inranges(values, ranges, right=False):
     
     Returns a boolean array indexing the values that are in the ranges.
     """
-    ranges = np.array(ranges)
+    ranges = np.asarray(ranges)
     if ranges.ndim > 1: ranges = ranges.ravel()
     return (np.digitize(values, ranges, right) % 2 == 1)
 
@@ -612,6 +613,8 @@ def polyfit_binned(bins, y, yerr, order):
     coeffs : 1D array
         coefficients of the polynomial, highest power first (such that it
         may be used with numpy.polyval)
+    covar : 2D array
+        covariance matrix for the polynomial coefficients
     fitfunc : function
         Function that evaluates y and yerr when given a new bin using the 
         maximum likelihood model fit.
