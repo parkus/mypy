@@ -9,6 +9,30 @@ from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pch
 import matplotlib.pyplot as plt
 import warnings
 
+def range_intersect(ranges0, ranges1):
+    """
+    Return the intersection of two sets of sorted ranges, given as Nx2 array-like.
+    """
+    rng0, rng1 = map(np.asarray, [ranges0, ranges1])
+    l0, r0 = rng0.T
+    l1, r1 = rng1.T
+    f0, f1 = [rng.flatten() for rng in [rng0, rng1]]
+    
+    lin0, rin0, lin1, rin1 = map(inranges, [l0, r0, l1, r1], [f1, f1, f0, f0])
+    
+    #keep only those edges that are within a good area of the other range
+    l = weave(l0[lin0], l1[lin1])
+    r = weave(r0[rin0], r1[rin1])
+    return np.array([l, r]).T
+
+def weave(a, b):
+    """
+    Insert values from b into a in a way that maintains their order. Both must
+    be sorted.
+    """
+    mapba = np.searchsorted(a, b)
+    return np.insert(a, mapba, b)
+
 def bracket(a, v):
     """
     return the indices of the two values in vector a that would bracket value v
