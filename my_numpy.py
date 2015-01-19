@@ -8,6 +8,37 @@ import numpy as np
 from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pchip_interpolate
 import matplotlib.pyplot as plt
 import warnings
+from cython.rebin_or import rebin_or as crebin_or
+
+def rebin_or(newbins, oldbins, oldvalues):
+    """
+    Rebins data in a bitwise or sense (instead of averaging the data values).
+    
+    This is useful for keeping track of data quality flags when rebinning
+    pixelated data where some of the bin edges fall between pixel edges.
+    
+    Note that all arrays will be converted to 8-byte precision.
+    
+    Parameters
+    ----------
+    newbins : 1-D array-like
+        New bin edges. There cannot be any bins that fall completely outside
+        of the old bins. Edges must be sorted in ascending order. 
+    oldbins : 1-D array-like
+        Old bin edges. Edges must be sorted in ascending order.
+    oldvalues : 1-D array-like, any size integer
+        Old values to be bitwise "or-ed". 
+        len(oldvalues) == len(oldbins) - 1
+    
+    Result
+    ------
+    newvalues : 1-D array
+        Rebinned values, same data type as oldvalues.
+    """
+    nb, ob, ov = map(np.asarray, [newbins, oldbins, oldvalues])
+    dt = ov.dtype
+    nv = crebin_or(nb.astype('double'), ob.astype('double'), ov.astype('long'))
+    return nv.astype(dt)
 
 def range_intersect(ranges0, ranges1):
     """
@@ -570,16 +601,6 @@ def intergolate(x_bin_edges,xin,yin):
         i0 = i1
         
     return yout
-
-def rebin_or(newbins, oldbins, values):
-    """
-    Rebin data using a bitwise or (instead of summing) to determine the values 
-    in the new bins.
-    
-    Does not check that the newbins fall wtihing the bounds of the oldbins. 
-    """    
-    binmap = np.searchsorted(newbins, oldbins)
-    
     
 def rebin(newbins, oldbins, values):
     """
@@ -610,6 +631,30 @@ def rebin(newbins, oldbins, values):
     
     #subtract to get the value of the integral just across each bin
     return np.diff(newintegral)
+
+def corrcoef(x, y):
+    """
+    Compute the correlation coefficient between rows of x and y.
+    """
+    if x.ndim == 1:
+        x = np.reshape(x, [1, len(x)])
+        y = np.reshape(y, [1, len(y)])
+    mx, my = [np.mean(a, 1) for a in [x, y]]
+    x0, y0 = x - mx[:,np.newaxis], y - my[:,np.newaxis]
+    Sxy = np.sum(x0*y0, 1)
+    Sxx = np.sum(x0*x0, 1)
+    Syy = np.sum(y0*y0, 1)
+    return Sxy/(np.sqrt(Sxx)*np.sqrt(Syy))
+
+def flagruns(x):
+    """
+    Flag portionso f x where succesive points have the same value.
+    """
+    x = np.asarray(x)
+    leqr = (x[:-1] == x[1:])
+    leqr = np.insert(leqr, [0, len(leqr)], [False, False])
+    flags = (leqr[:-1] | leqr[1:])
+    return flags
     
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
