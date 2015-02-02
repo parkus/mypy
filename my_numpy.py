@@ -37,7 +37,7 @@ def rebin_or(newbins, oldbins, oldvalues):
     """
     nb, ob, ov = map(np.asarray, [newbins, oldbins, oldvalues])
     dt = ov.dtype
-    nv = crebin_or(nb.astype('double'), ob.astype('double'), ov.astype('long'))
+    nv = crebin_or(nb.astype(float), ob.astype(float), ov.astype(long))
     return nv.astype(dt)
 
 def range_intersect(ranges0, ranges1):
@@ -217,7 +217,7 @@ def quadsum(*args, **kwargs):
     -128
     """
     args = list(args)
-    args[0] = args[0]**2
+    args[0] = np.asarray(args[0])**2
     return np.sqrt(np.sum(*args, **kwargs))
 
 def lace(a, b, axis=0):
@@ -419,7 +419,7 @@ def empty_arrays(N, dtype=float, shape=None):
         for a in arys: a.shape = shape
     return arys
 
-def inranges(values, ranges, right=False):
+def inranges(values, ranges):
     """Determines whether values are in the supplied list of sorted ranges.
     
     ranges can be a nested list of range pairs ([[x00,x01], [x10, x11],
@@ -430,8 +430,11 @@ def inranges(values, ranges, right=False):
     Returns a boolean array indexing the values that are in the ranges.
     """
     ranges = np.asarray(ranges)
-    if ranges.ndim > 1: ranges = ranges.ravel()
-    return (np.digitize(values, ranges, right) % 2 == 1)
+    if ranges.ndim == 2: 
+        if ranges.shape[1] != 2: 
+            ranges = ranges.T
+        ranges = ranges.ravel()
+    return (np.searchsorted(ranges, values) % 2 == 1)
 
 def midpts(ary, axis=None):
     """Computes the midpoints between points in a vector.
@@ -740,6 +743,33 @@ def polyfit_binned(bins, y, yerr, order):
         return y, yerr
         
     return c[::-1], cov[::-1,::-1], f
+    
+def chi2normseries(x, xerr, y, yerr):
+    """
+    Find the normalization factor, c, to apply to y that minimizes the
+    chi-square statistic between x and c*y.
+    
+    The errors in y are also assumed to scale with c.
+    """
+    #there is a word file with derivation of this math
+    vx, vy = xerr**2, yerr**2
+    
+    #assuming the errors don't scale...
+#    A = np.nansum(x*y/vx) + np.nansum(x*y/vy)
+#    B = np.nansum(y*y/vx) + np.nansum(y*y/vy)
+#    return A/B
+    
+    #assuming the errors scale
+    Sxyx = np.nansum(x*y/vx)
+    Syyx = np.nansum(y*y/vx)
+    Sxyy = np.nansum(x*y/vy)
+    Sxxy = np.nansum(x*x/vy)
+    r = np.roots([Syyx, -Sxyx, 0.0, Sxyy, -Sxxy])
+    #select the root with a positive real part and the smallest possible
+    #imaginary part (would be zero except for arithmetic error)
+    r = r[np.real(r) > 0]
+    r = r[np.argmin(np.abs(np.imag(r)))]
+    return float(np.real(r))
     
 def argextrema(y,separate=True):
     """Returns the indices of the local extrema of a series. When consecutive 
