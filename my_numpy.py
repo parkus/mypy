@@ -39,6 +39,63 @@ def rebin_or(newbins, oldbins, oldvalues):
     dt = ov.dtype
     nv = crebin_or(nb.astype(float), ob.astype(float), ov.astype(long))
     return nv.astype(dt)
+    
+def rebin_special(newbins, oldbins, oldvalues, function):
+    """
+    Rebin data by applying function to all oldvalues that fall within the same
+    newbin.
+    
+    Parameters
+    ----------
+    newbins : 1-D array-like
+        New bin edges. There cannot be any bins that fall outside
+        of the old bins. Edges must be sorted in ascending order. 
+    oldbins : 1-D array-like
+        Old bin edges. Edges must be sorted in ascending order.
+    oldvalues : 1-D array-like, any size integer
+        Old values to be bitwise rebinned. 
+        len(oldvalues) == len(oldbins) - 1
+    function : function or string
+        function : The function to apply to each set of newly binned values. E.g.
+            if the values 1 and 2 fall into a newbin and function=np.sum, then
+            that bin will get a value of 3.
+        string : specifies a common operation and will use a faster rebin method
+            can be one of
+            'or' : use rebin_or
+            'sum' : use standard rebin
+            'avg' : use standard rebin in a way that averages the values,
+                weighted by bin width
+            
+    Result
+    ------
+    newvalues : 1-D array
+        Rebinned values, same data type as oldvalues.
+        len(newvalues) == len(newbins) - 1
+    """
+    if function == 'sum':
+        return rebin(newbins, oldbins, oldvalues)
+    if function == 'or':
+        return rebin_or(newbins, oldbins, oldvalues)
+    if function == 'avg':
+        dold, dnew = map(np.diff, [oldbins, newbins])
+        return rebin(newbins, oldbins, oldvalues*dold)/dnew
+    
+    if newbins[0] < oldbins[0] or newbins[-1] > oldbins[-1]:
+        raise ValueError('New bin edges fall outside of old bin edges.')
+    assert len(oldvalues) == len(oldbins) - 1
+    
+    i = np.searchsorted(oldbins, newbins, side='right') #where new bin edges fit into old
+    
+    #this is a complicated trick... basically insert a duplicate value into
+    #the oldvalues array wherever a newbin edge falls between oldbin edges
+    #then add to the i values so that they fall in between the duplicated
+    #values. Then split up the array
+    noncoincident = (oldbins[i-1] != newbins)
+    inc = i[noncoincident]
+    expanded = np.insert(oldvalues, inc, oldvalues[inc-1])
+    ie = i + np.cumsum(noncoincident) - 1
+    
+    return np.array(map(function, np.split(expanded, ie)[1:-1]))
 
 def range_intersect(ranges0, ranges1):
     """
@@ -624,6 +681,17 @@ def rebin(newbins, oldbins, values):
     #generate cumulative integral value at old bin edges, starting at 0.0 for
     #the left edge of the first bin
     integral = np.append(0.0, np.cumsum(values))
+    
+    #if there was a math overflow in np.cumsum, recursively call such that
+    #this doesn't happen
+    badsum = ~np.isclose(np.diff(integral), values, atol=0.0)
+    #TODO: test
+    if np.any(badsum):
+        i = np.min(np.nonzero(badsum)[0]) - 10
+        j = np.max(np.nonzero(newbins < oldbins[i-1])[0])
+        left = rebin(newbins[:j], oldbins[:i], values[:i-1])
+        right = rebin(newbins[j-1:], oldbins[i-1:], values[i-1:])
+        return np.hstack(left, right)
     
     #add bad values back in so that nan's and infinites get propagated into
     #any new bin that contains one
