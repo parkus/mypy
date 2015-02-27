@@ -49,7 +49,8 @@ def __rebin(nb, ob, ov, nv, method, n):
                 if nb[k+1] != ob[i1]:
                     right = (nb[k+1] - ob[i1-1]) / (ob[i1] - ob[i1-1]) * ov[i1-1]
                     i1 -= 1
-                for i in range(i0, i1): mid += ov[i0]
+                mid = 0.0
+                for i in range(i0, i1): mid += ov[i]
                 nv[k] = left + mid + right
     elif method == 'or':
         for k in range(n):
