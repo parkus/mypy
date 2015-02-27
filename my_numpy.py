@@ -5,97 +5,23 @@ Created on Wed Apr 30 11:43:52 2014
 @author: Parke
 """
 import numpy as np
-from scipy.interpolate import interp1d #InterpolatedUnivariateSpline as ius #pchip_interpolate
+from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import warnings
-from cython.rebin_or import rebin_or as crebin_or
+from crebin.rebin import rebin as crebin
+
+#------------------------------------------------------------------------------
+# backwards compatability
 
 def rebin_or(newbins, oldbins, oldvalues):
-    """
-    Rebins data in a bitwise or sense (instead of averaging the data values).
-    
-    This is useful for keeping track of data quality flags when rebinning
-    pixelated data where some of the bin edges fall between pixel edges.
-    
-    Note that all arrays will be converted to 8-byte precision.
-    
-    Parameters
-    ----------
-    newbins : 1-D array-like
-        New bin edges. There cannot be any bins that fall completely outside
-        of the old bins. Edges must be sorted in ascending order. 
-    oldbins : 1-D array-like
-        Old bin edges. Edges must be sorted in ascending order.
-    oldvalues : 1-D array-like, any size integer
-        Old values to be bitwise "or-ed". 
-        len(oldvalues) == len(oldbins) - 1
-    
-    Result
-    ------
-    newvalues : 1-D array
-        Rebinned values, same data type as oldvalues.
-    """
-    nb, ob, ov = map(np.asarray, [newbins, oldbins, oldvalues])
-    dt = ov.dtype
-    nv = crebin_or(nb.astype(float), ob.astype(float), ov.astype(long))
-    return nv.astype(dt)
-    
+    """Deprecated as of 2015-02-15. Use rebin instead."""
+    return rebin(newbins, oldbins, oldvalues, method='or')
+
 def rebin_special(newbins, oldbins, oldvalues, function):
-    """
-    Rebin data by applying function to all oldvalues that fall within the same
-    newbin.
-    
-    Parameters
-    ----------
-    newbins : 1-D array-like
-        New bin edges. There cannot be any bins that fall outside
-        of the old bins. Edges must be sorted in ascending order. 
-    oldbins : 1-D array-like
-        Old bin edges. Edges must be sorted in ascending order.
-    oldvalues : 1-D array-like, any size integer
-        Old values to be bitwise rebinned. 
-        len(oldvalues) == len(oldbins) - 1
-    function : function or string
-        function : The function to apply to each set of newly binned values. E.g.
-            if the values 1 and 2 fall into a newbin and function=np.sum, then
-            that bin will get a value of 3.
-        string : specifies a common operation and will use a faster rebin method
-            can be one of
-            'or' : use rebin_or
-            'sum' : use standard rebin
-            'avg' : use standard rebin in a way that averages the values,
-                weighted by bin width
-            
-    Result
-    ------
-    newvalues : 1-D array
-        Rebinned values, same data type as oldvalues.
-        len(newvalues) == len(newbins) - 1
-    """
-    if function == 'sum':
-        return rebin(newbins, oldbins, oldvalues)
-    if function == 'or':
-        return rebin_or(newbins, oldbins, oldvalues)
-    if function == 'avg':
-        dold, dnew = map(np.diff, [oldbins, newbins])
-        return rebin(newbins, oldbins, oldvalues*dold)/dnew
-    
-    if newbins[0] < oldbins[0] or newbins[-1] > oldbins[-1]:
-        raise ValueError('New bin edges fall outside of old bin edges.')
-    assert len(oldvalues) == len(oldbins) - 1
-    
-    i = np.searchsorted(oldbins, newbins, side='right') #where new bin edges fit into old
-    
-    #this is a complicated trick... basically insert a duplicate value into
-    #the oldvalues array wherever a newbin edge falls between oldbin edges
-    #then add to the i values so that they fall in between the duplicated
-    #values. Then split up the array
-    noncoincident = (oldbins[i-1] != newbins)
-    inc = i[noncoincident]
-    expanded = np.insert(oldvalues, inc, oldvalues[inc-1])
-    ie = i + np.cumsum(noncoincident) - 1
-    
-    return np.array(map(function, np.split(expanded, ie)[1:-1]))
+    """Deprecated as of 2015-02-15. Use rebin instead."""
+    return rebin(newbins, oldbins, oldvalues, method=function)
+
+#------------------------------------------------------------------------------
 
 def range_intersect(ranges0, ranges1):
     """
@@ -105,9 +31,9 @@ def range_intersect(ranges0, ranges1):
     l0, r0 = rng0.T
     l1, r1 = rng1.T
     f0, f1 = [rng.flatten() for rng in [rng0, rng1]]
-    
+
     lin0, rin0, lin1, rin1 = map(inranges, [l0, r0, l1, r1], [f1, f1, f0, f0])
-    
+
     #keep only those edges that are within a good area of the other range
     l = weave(l0[lin0], l1[lin1])
     r = weave(r0[rin0], r1[rin1])
@@ -139,10 +65,10 @@ def sliminterpN(pt, grids, datafunc):
     """
     A means of computing an N-linear interpolation without having to load a
     huge N-d data array into memory.
-    
+
     Initially written for use in interpolating spectra from the a model spectra
     database.
-    
+
     Parameters
     ----------
     pt : 1-D array-like
@@ -155,52 +81,52 @@ def sliminterpN(pt, grids, datafunc):
         (separately, in order -- not as a list). Data
         can be anything that permits linear comibination with normal arithmetic
         operators.
-    
-    Returns 
+
+    Returns
     -------
     result : same type as returned by datafunc
         The data interpolated to pt.
-    """     
+    """
     #function to return interpolated value one level down the hierarchy
     def idata(i):
         #if we are down to one dimension, return the data
         if len(pt) == 1:
             return datafunc(i)
-        
+
         else:
             newfunc = lambda *args: datafunc(i, *args)
             return sliminterpN(pt[1:], grids[1:], newfunc)
-    
+
     #retrieve the bracketing values in the grid
     bkti = bracket(grids[0], pt[0])
-    
+
     #if pt[0] happened to fall right on a grid value, use that data
     if len(bkti) == 1:
         return idata(bkti[0])
-    
+
     #compute the factors by which the data from each point on the grid will
     #be mutliplied before summing
     a = grids[0][bkti]
     d = a[1] - a[0]
     fac0 = (a[1] - pt[0])/d
     fac1 = 1.0 - fac0
-    
+
     #get the data at the bracketing values, interpolated over the other grid
     #values
     bktdata = map(idata, bkti)
-    
+
     #interpolate
     return bktdata[0]*fac0 + bktdata[1]*fac1
 
 def quadsum(*args, **kwargs):
     """Sum of array elements in quadrature.
-    
+
     This function is identical to numpy.sum except that array elements are
     squared before summing and then the sqrt of the resulting sums is returned.
-    
-    The docstring from numpy.sum is reproduced below for convenience (copied 
+
+    The docstring from numpy.sum is reproduced below for convenience (copied
     2014-12-09)
-    
+
     Parameters
     ----------
     a : array_like
@@ -280,7 +206,7 @@ def quadsum(*args, **kwargs):
 def lace(a, b, axis=0):
     """
     Combine the two arrays by alternating values from each.
-    
+
     Parameters
     ----------
     a,b : array-like
@@ -290,26 +216,26 @@ def lace(a, b, axis=0):
         array will be used for the remainder.
     axis : int, optional
         The axis along which to lace.
-    
+
     Returns
     -------
     c : array
         The laced arrays, with the same shape of the input arrays except along
         the lace axis, which will be the sum of the lengths of the two input
         arrays along that axis.
-    """    
+    """
     a, b = map(np.asarray, [a,b])
-    
+
     #prepare empty output array
     Na, Nb = a.shape[axis], b.shape[axis]
     ctype = np.result_type(a,b)
     cshape = list(a.shape)
     cshape[axis] = Na + Nb
     c = np.zeros(cshape, ctype)
-    
+
     #make the lace axis the first one
     a, b, c = [np.swapaxes(ary, axis, 0) for ary  in [a,b,c]]
-    
+
     #decide how to interleave values from a nd b
     if Na == Nb:
         slices = [slice(None,2*Na,2), slice(1,2*Na,2)]
@@ -320,24 +246,24 @@ def lace(a, b, axis=0):
     else:
         slices = [slice(None,2*Nb,2), slice(1,2*Nb,2), slice(2*Nb,None)]
         arys = [a[:Nb], b, a[Nb:]]
-    
+
     #put them in
     for slc, ary in zip(slices,arys):
         c[slc,...] = ary
-    
+
     #return things to the original shape
     a, b, c = [np.swapaxes(ary, axis, 0) for ary  in [a,b,c]]
-    
+
     return c
 
 def mids2edges(mids, start='mid', first='adjacent'):
     """
     Reconstructs bin edges given only the midpoints.
-    
+
     Parameters
     ----------
     mids : 1-D array-like
-        A 1-D array or list of the midpoints from which bin edges are to be 
+        A 1-D array or list of the midpoints from which bin edges are to be
         inferred.
     start : {'left'|'right'|'mid'}, optional
         left : start by assuming the spacing between the first two midpts
@@ -351,25 +277,25 @@ def mids2edges(mids, start='mid', first='adjacent'):
     first : {float|'adjcacent'|'linear-i'|'linear-x'|function}, optional
         Width of the starting bin to the spacing between the midpoints to extrapolate the
         width of the first or last bin.
-        
+
         The linear options try to extrapolate the width of the start bin by
         assuming the bin widths follow the same linear change as the midpoint
         spacings. linear-i' assumes a linear change with respect to the bin index
         whereas 'linear-x' assumes a linear change with respect to the bin
         value. These can only be used with start set to
-        'left' or 'right'. Note that using 'linear' can produce nonsensical output 
+        'left' or 'right'. Note that using 'linear' can produce nonsensical output
         if the spacing between midpoints does not vary linearly.
-        
+
         Alternatively, a function may be provided that fits the midpoint spacings.
         That function should
         return a fit function (just like scipy's interp1d does), such that if
         result = function(xin,yin), then yout = result(xout) is a valid.
-    
+
     Result
     ------
     edges : np.array
         The inferred bin edges.
-    
+
     Could be accelerated with a cython implementation.
     """
     mids = np.array(mids)
@@ -377,7 +303,7 @@ def mids2edges(mids, start='mid', first='adjacent'):
     e = np.zeros(N+1)
     if type(first) is not float and first != 'adjacent' and start == 'mid':
         raise ValueError("Start can only be 'mid' if fit == 'none'.")
-      
+
     if type(first) is float:
         if start == 'left': e[0] = mids[0] - first/2.0
         if start == 'right': e[-1] = mids[-1] + first/2.0
@@ -398,14 +324,14 @@ def mids2edges(mids, start='mid', first='adjacent'):
                 return np.polyval(cdi, i)
         elif callable(first):
             fitfun = first(x,d)
-            
+
         if start == 'left':
             d0 = fitfun(mids[0])
             e[0] = mids[0] - d0/2.0
         if start == 'right':
             d1 = fitfun(mids[-1])
             e[-1] = mids[-1] + d1/2.0
-            
+
     if start == 'left':
         for i in np.arange(0,N): e[i+1] = 2*mids[i] - e[i]
     if start == 'right':
@@ -415,24 +341,24 @@ def mids2edges(mids, start='mid', first='adjacent'):
         e[i] = (mids[i-1] + mids[i])/2.0
         for i in np.arange(i-1,-1,-1): e[i] = 2*mids[i] - e[i+1]
         for i in np.arange(i+1,N): e[i+1] = 2*mids[i] - e[i]
-    
+
     if any(e[1:] - e[:-1] <= 0):
         warnings.warn('There are zero or negative length bins in the output. '
                       'Consider using a different fit or start.', RuntimeWarning)
-                            
+
     return e
 
 def splitsum(ary, indices):
     """
     Splits an array and sums values in each section.
-    
+
     Parameters
     ----------
     ary : 1-D array-like
         Array to be divided into sub-arrays.
     indices : 1-D array-like
         Integers giving the slice indices for splitting the array.
-        
+
     Returns
     -------
     sums : 1-D array
@@ -442,22 +368,22 @@ def splitsum(ary, indices):
     if ary.ndim > 1:
         raise NotImplementedError("Can only hande 1-D arrays at the moment "
         "because I'm not sure how to generalize this to an n-dim case.")
-    
+
     #add begging and end to the indices and make sure none are negative to
     #avoid wraparound
     indices = np.insert(indices, [0, len(indices)], [0, len(ary)])
     neg = (indices < 0)
     indices[neg] = len(ary) + indices[neg]
-    
+
     #beginning and end of each block
     begs = indices[:-1]
     ends = indices[1:]
-    
+
     #cumulative sums, starting with zero
     cs = np.insert(np.cumsum(ary), 0, 0.0)
-    
+
     return cs[ends] - cs[begs]
-    
+
 
 def block_edges(ary):
     """
@@ -478,24 +404,24 @@ def empty_arrays(N, dtype=float, shape=None):
 
 def inranges(values, ranges):
     """Determines whether values are in the supplied list of sorted ranges.
-    
+
     ranges can be a nested list of range pairs ([[x00,x01], [x10, x11],
     [x20, x21], ...]), a single list ([x00,x01,x10,x11,x20,x21,...]), or the
     np.array equivalents. Values are in a range if range[0] <= value < range[1]
     unless right=True, then range[0] < value <= range[1].
-    
+
     Returns a boolean array indexing the values that are in the ranges.
     """
     ranges = np.asarray(ranges)
-    if ranges.ndim == 2: 
-        if ranges.shape[1] != 2: 
+    if ranges.ndim == 2:
+        if ranges.shape[1] != 2:
             ranges = ranges.T
         ranges = ranges.ravel()
     return (np.searchsorted(ranges, values) % 2 == 1)
 
 def midpts(ary, axis=None):
     """Computes the midpoints between points in a vector.
-    
+
     Output has length len(vec)-1.
     """
     if type(ary) != np.ndarray: ary = np.array(ary)
@@ -509,9 +435,9 @@ def midpts(ary, axis=None):
 def shorten_jumps(vec,maxjump,newjump=None):
     """Finds jumps > maxjump in a vector of increasing values and shortens the
     jump to newjump.
-    
+
     If newjump is not specified it is set to maxjump.
-    
+
     Returns a vector with large jumps shortened to newjump, the values at
     the midpoint of each new (shortened) jump, and the size of the original
     jumps.
@@ -525,48 +451,48 @@ def shorten_jumps(vec,maxjump,newjump=None):
     vec_new = jumps.cumsum()
     midjump = (vec_new[jumpindex-1] + vec_new[jumpindex])/2.0
     return vec_new, midjump, jumplen
-        
+
 def divvy(ary, bins, keyrow=0):
     """
-    Divvys up the points in the input vector or array into the indicated 
+    Divvys up the points in the input vector or array into the indicated
     bins.
-    
+
     Row keyrow of the array is used to divvy up the array.
-    
+
     Returns a list of arrays, each array containing the points in the
     corresponding bins. Points outside of the bins are discarded. Bins is a
     vector of the bin edges and must be in ascending order.
-    
+
     I tested this against looping throught the bins and removing points from
     the vector that were in the bin at each iteration and this was slightly
     faster.
     """
     ary = np.asarray(ary)
-    if ary.ndim == 1: ary = ary.reshape([1,len(ary)])    
+    if ary.ndim == 1: ary = ary.reshape([1,len(ary)])
     ivec = np.digitize(ary[keyrow,:], bins)
     divvied = [ary[:, ivec == i] for i in np.arange(1,len(bins))]
-    
-    return divvied        
+
+    return divvied
 
 def chunkogram(vec, chunksize, weights=None, unsorted=False):
     """
     Like chunk_edges, but used when many points have the same value such
     that chunks sometimes must contain different numbers of points.
-    
-    If enough points have the same value, the bin edges would be identical. 
+
+    If enough points have the same value, the bin edges would be identical.
     This results in infinite values when computing point densities. To
     circumvent that problem, this function extends the right edge of the bin
     to a value between that of the identical points and the next largest point(s).
-    
+
     Because chunks may not be the same size, the function returns the bin
     edges as well as the counts, much like histogram (hence the name).
-    
+
     This will take a lot longer than regular chunk_edges, so don't use it
     if all the values in the vector are unique.
     """
     v = np.sort(vec) if unsorted else vec
     wtd = weights != None
-    
+
     maxlen = len(v)//chunksize + 1
     edges, count = np.zeros(maxlen+1), np.zeros(maxlen)
     edges[0] = (v[0] + v[1])/2.0
@@ -588,23 +514,23 @@ def chunkogram(vec, chunksize, weights=None, unsorted=False):
 
 def chunk_edges(vec, chunksize, unsorted=False):
     """Determine bin edges that result in an even number of points in each bin.
-    
+
     Assumes the vector is sorted unless specifically told otherwise with the
     unsorted keyword.
-    
+
     The first and last points will be discarded. If you wish to include these
     points, tacking pretend points on both ends of the input vector can
     accomodate the situation.
     """
     v = np.sort(vec) if unsorted else vec
-        
+
     #use indices bc if len(vec) % chunksize == 0 there will be a point left of
     #the last bin edges, but not right of it
     iright = np.arange(1, len(v), chunksize, int)
-    
+
     edges = (v[iright] + v[iright-1])/2.0
     return edges
-    
+
 def chunk_sum(vec, chunksize):
     """Computes the sums of chunks of points in a vector.
     """
@@ -616,31 +542,31 @@ def chunk_sum(vec, chunksize):
 
 def intergolate(x_bin_edges,xin,yin):
     """Compute average of xin,yin within supplied bins.
-    
+
     This funtion is similar to interpolation, but averages the curve repesented
     by xin,yin over the supplied bins to produce the output, yout.
-    
+
     This is particularly useful, for example, for a spectrum of narrow emission
-    incident on a detector with broad pixels. Each pixel averages out or 
-    "dilutes" the lines that fall within its range. However, simply 
+    incident on a detector with broad pixels. Each pixel averages out or
+    "dilutes" the lines that fall within its range. However, simply
     interpolating at the pixel midpoints is a mistake as these points will
     often land between lines and predict no flux in a pixel where narrow but
     strong lines will actually produce significant flux.
-    
+
     Note that bins outside of xin will assume the curve is constant
     at the value of its closest endpoint.
     """
-    
+
     xbe = np.copy(x_bin_edges)
-    
+
     #if bins extend beyond the range of xin, add extra xin,yin points at the
     #relevant end
     if xbe[0] < xin[0]:
         xin, yin = np.insert(xin,0,xbe[0]), np.insert(yin,0,yin[0])
     if xbe[-1] > xin[-1]:
         xin, yin = np.append(xin,xbe[-1]), np.append(yin,yin[-1])
-    
-    #define variables to store the slice edges for points within each 
+
+    #define variables to store the slice edges for points within each
     #intergolation bin, exclusive
     i0, i1 = 0, 0
     yout = np.zeros(len(xbe)-1)
@@ -650,59 +576,88 @@ def intergolate(x_bin_edges,xin,yin):
         #of the bin
         while xin[i1] < xbe[j+1]: i1 += 1
             #TODO: fix the above
-        
+
         #inegrate xin,yin that fall in the current bin
         xedges = np.hstack([[xbe[j]], xin[i0:i1], xbe[j+1]])
         dx = xedges[1:] - xedges[:-1]
         areas = dx*yin[i0:i1]
         yout[j] = np.sum(areas)/(xbe[j+1] - xbe[j])
-        
+
         # update the point just inside of the left bin edge
         i0 = i1
-        
-    return yout
-    
-def rebin(newbins, oldbins, values):
-    """
-    Take binned data and estimate the values wihtin different bins edges.
-    
-    Assumes the value in each bin is the integral of some function over that
-    bin, -NOT- the average of the function.
-    """
-    binmin, binmax = np.min(oldbins), np.max(oldbins)
-    if any(newbins < binmin) or any(newbins > binmax):
-        raise ValueError('New bin edges cannot extend beyond old bin edges.')
-    
-    #clean out non-finite values (so that the cumulative sum isn't screwed up)
-    bad = np.logical_not(np.isfinite(values))
-    badvals = values[bad]
-    values[bad] = 0.0
-    
-    #generate cumulative integral value at old bin edges, starting at 0.0 for
-    #the left edge of the first bin
-    integral = np.append(0.0, np.cumsum(values))
-    
-    #if there was a math overflow in np.cumsum, recursively call such that
-    #this doesn't happen
-    badsum = ~np.isclose(np.diff(integral), values, atol=0.0)
-    #TODO: test
-    if np.any(badsum):
-        i = np.min(np.nonzero(badsum)[0]) - 10
-        j = np.max(np.nonzero(newbins < oldbins[i-1])[0])
-        left = rebin(newbins[:j], oldbins[:i], values[:i-1])
-        right = rebin(newbins[j-1:], oldbins[i-1:], values[i-1:])
-        return np.hstack(left, right)
-    
-    #add bad values back in so that nan's and infinites get propagated into
-    #any new bin that contains one
-    integral[bad] = badvals
-    
-    #interpolate to the value at the new bin edges
-    newintegral = np.interp(newbins, oldbins, integral)
-    
-    #subtract to get the value of the integral just across each bin
-    return np.diff(newintegral)
 
+    return yout
+
+def rebin(newbins, oldbins, values, method='sum'):
+    """
+    Take binned data and rebin it using the specified method.
+
+    Parameters
+    ----------
+    newbins : 1d array-like
+        The edges of the new bins in ascending order.
+    oldbins : 1d array-like
+        The edges of the old bins in ascending order.
+    values : 1d array-like
+        Data values within each bin, len(values) == len(oldbins) - 1.
+    method : str or function, optional
+        How the data should be rebinned. Several common methods can be
+        specified with string input
+            - 'sum' : The default. Bin values are summed. Where newbin edges
+                fall between oldbin edges, values in those bins are fractioned
+                appropriately.
+            - 'avg' : Bin values are averaged, weighted by bin widths.
+                (Essentially, values are multiplied by the oldbin widths,
+                rebinned in a summation sense, then divided by the newbin
+                widths.)
+            - 'min' : The minumum value of all oldbins all or partly within a
+                newbin is taken.
+            - 'max' : Same as min, but the maximum value is taken.
+            - 'or' : Same as min, but the btwise or of the values is taken.
+        A custom function can also be provided as input. This must accept an
+        array as input and return a scalar, such as numpy.min.
+
+    Returns
+    -------
+    newvalues : 1d array
+        Rebinned data, len(newvalues) == len(newbins) - 1.
+    """
+    # vet input
+    nb, ob, ov = map(np.asarray, [newbins, oldbins, values], [float, float, None])
+    dt = ov.dtype
+    assert np.all(oldbins[1:] > oldbins[:-1])
+    assert np.all(newbins[1:] > newbins[:-1])
+    assert len(oldbins) == len(values) + 1
+    binmin, binmax = oldbins[0], oldbins[-1]
+    if np.any(nb < binmin) or np.any(nb > binmax):
+        raise ValueError('New bin edges cannot extend beyond old bin edges.')
+
+    # use built-in cython function I made for the easy ones
+    if method in ['sum', 'min', 'max', 'or']:
+        nv = crebin(nb, ob, ov, method)
+    elif method == 'avg':
+        do, dn = map(np.diff, [ob, nb])
+        nv = crebin(nb, ob, ov*do, 'sum') / dn
+
+    # otherwise, split up the array and apply the provided function
+    elif callable(method):
+        i = np.searchsorted(oldbins, newbins, side='right') #where new bin edges fit into old
+
+        #this is a complicated trick... basically insert a duplicate value into
+        #the oldvalues array wherever a newbin edge falls between oldbin edges
+        #then add to the i values so that they fall in between the duplicated
+        #values. Then split up the array
+        noncoincident = (oldbins[i-1] != newbins)
+        inc = i[noncoincident]
+        expanded = np.insert(values, inc, values[inc-1])
+        ie = i + np.cumsum(noncoincident) - 1
+
+        nv = np.array(map(method, np.split(expanded, ie)[1:-1]))
+    else:
+        raise ValueError('Method not recognized.')
+
+    assert len(nv) == len(nb) - 1
+    return nv.astype(dt)
 def corrcoef(x, y):
     """
     Compute the correlation coefficient between rows of x and y.
@@ -726,17 +681,17 @@ def flagruns(x):
     leqr = np.insert(leqr, [0, len(leqr)], [False, False])
     flags = (leqr[:-1] | leqr[1:])
     return flags
-    
+
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
     """
     for i in xrange(0, len(l), n):
         yield l[i:i+n]
-        
+
 def polyfit_binned(bins, y, yerr, order):
     """Generates a function for the maximum likelihood fit to a set of binned
     data.
-    
+
     Parameters
     ----------
     bins : 2D array-like, shape Nx2
@@ -747,7 +702,7 @@ def polyfit_binned(bins, y, yerr, order):
         errors on the data
     order : int
         the order of the polynomial to fit
-    
+
     Returns
     -------
     coeffs : 1D array
@@ -756,13 +711,13 @@ def polyfit_binned(bins, y, yerr, order):
     covar : 2D array
         covariance matrix for the polynomial coefficients
     fitfunc : function
-        Function that evaluates y and yerr when given a new bin using the 
+        Function that evaluates y and yerr when given a new bin using the
         maximum likelihood model fit.
     """
     N, M = order, len(y)
     if type(yerr) in [int,float]: yerr = yerr*np.ones(M)
     bins = np.asarray(bins)
-    
+
     #some prelim calcs. all matrices are (N+1)xM
     def prelim(bins, M):
         a, b = bins[:,0], bins[:,1]
@@ -771,35 +726,35 @@ def polyfit_binned(bins, y, yerr, order):
         bap = bpow - apow
         frac = np.array([np.ones(M)/(n+1) for n in range(N+1)])
         return bap, frac
-    
+
     bap, frac = prelim(bins, M)
     var = np.array([np.array(yerr)**2]*(N+1))
     ymat = np.array([y]*(N+1))
-    
+
     #build the RHS vector
     rhs = np.sum(ymat*bap/var, 1)
-    
+
     #build the LHS coefficient matrix
     nmat = bap/var #N+1xM (n,m)
     kmat = bap.T*frac.T #MxN+1 (m,k)
     lhs = np.dot(nmat,kmat)
-    
+
     #solve for the polynomial coefficients
     c = np.linalg.solve(lhs, rhs)
-    
+
     #compute the inverse covariance matrix (same as Hessian)
     H = np.dot(nmat*frac,kmat)
     cov = np.linalg.inv(H)
-    
+
     #construct the function to compute model values and errors
     def f(bins):
         M = len(bins)
         bap, frac = prelim(bins, M)
-        
+
         #values
         cmat = np.transpose([c]*M)
         y = np.sum(bap*cmat*frac, 0)
-        
+
         #errors
         T = bap*frac
         cT = np.dot(cov, T)
@@ -807,26 +762,26 @@ def polyfit_binned(bins, y, yerr, order):
         #of dotting the matrices
         yvar = np.sum(T*cT, 0)
         yerr = np.sqrt(yvar)
-            
+
         return y, yerr
-        
+
     return c[::-1], cov[::-1,::-1], f
-    
+
 def chi2normseries(x, xerr, y, yerr):
     """
     Find the normalization factor, c, to apply to y that minimizes the
     chi-square statistic between x and c*y.
-    
+
     The errors in y are also assumed to scale with c.
     """
     #there is a word file with derivation of this math
     vx, vy = xerr**2, yerr**2
-    
+
     #assuming the errors don't scale...
 #    A = np.nansum(x*y/vx) + np.nansum(x*y/vy)
 #    B = np.nansum(y*y/vx) + np.nansum(y*y/vy)
 #    return A/B
-    
+
     #assuming the errors scale
     Sxyx = np.nansum(x*y/vx)
     Syyx = np.nansum(y*y/vx)
@@ -838,9 +793,9 @@ def chi2normseries(x, xerr, y, yerr):
     r = r[np.real(r) > 0]
     r = r[np.argmin(np.abs(np.imag(r)))]
     return float(np.real(r))
-    
+
 def argextrema(y,separate=True):
-    """Returns the indices of the local extrema of a series. When consecutive 
+    """Returns the indices of the local extrema of a series. When consecutive
     points at an extreme have the same value, the index of the first is
     returned.
     """
@@ -848,9 +803,9 @@ def argextrema(y,separate=True):
     pos_neg = np.zeros(len(delta), np.int8)
     pos_neg[delta > 0] = 1
     pos_neg[delta < 0] = -1
-    
+
     curve_sign = pos_neg[1:] - pos_neg[:-1]
-    
+
     if separate:
         argmax = np.nonzero(curve_sign < 0)[0] + 1
         argmin = np.nonzero(curve_sign > 0)[0] + 1
@@ -858,17 +813,17 @@ def argextrema(y,separate=True):
     else:
         argext = np.nonzero(curve_sign != 0)[0] + 1
         return argext
-        
+
 def emd(t,y,Nmodes=None):
     """Decompose function into "intrinsic modes" using empirical mode
     decompisition.
-    
+
     From Huang et al. (1998; RSPA 454:903).
-    
-    Returns c,r, where c is a list of vectors giving the intrinsic mode values 
+
+    Returns c,r, where c is a list of vectors giving the intrinsic mode values
     at t and r is a vector giving the residual values at t.
     """
-    
+
     c = []
     h, r = [y]*2
     hold = np.zeros(y.shape)
@@ -880,26 +835,26 @@ def emd(t,y,Nmodes=None):
                 if var < 0.25:
                     c.append(h)
                     r = r - h
-                    
+
                     #if the user doesn't want any more modes
                     if len(c) == Nmodes:
                         return c,r
-                    
+
                     h = r
                     hold = np.zeros(y.shape)
                     break
                 hold = h
         except FlatFunction: #if the residue is has too few extrema
             return c, r
-            
+
 class FlatFunction(Exception):
     pass
 
 def sift(t,y,nref=100,plot=False):
     """Identify the dominant "intinsic mode" in a series of data.
-    
+
     See Huang et al. (1998; RSPA 454:903).
-    
+
     Identifies the relative max and min in the series, fits spline curves
     to these to estimate an envelope, then subtracts the mean of the envelope
     from the series. The difference is then returned. The extrema are refelcted
@@ -907,14 +862,14 @@ def sift(t,y,nref=100,plot=False):
     effects, where nref controls the maximum total number of extrema (max and
     min) that are reflected.
     """
-    
+
     #identify the relative extrema
     argext = argextrema(y, separate=False)
-    
+
     #if there are too few extrema, raise an exception
     if len(argext) < 2:
         raise FlatFunction('Too few max and min in the series to sift')
-    
+
     #should we include the right or left endpoints? (if they are beyond the
     #limits set by the nearest two extrema, then yes)
     inclleft = not inranges(y[[0]], y[argext[:2]])[0]
@@ -923,31 +878,31 @@ def sift(t,y,nref=100,plot=False):
     if inclleft and not inclright: argext = np.insert(argext,0,0)
     if not inclleft and inclright: argext = np.append(argext,-1)
     #if neither, do nothing
-    
+
     #now reflect the extrema about both sides
     text, yext  = t[argext], y[argext]
     tleft, yleft = text[0] - (text[nref:0:-1] - text[0]) , yext[nref:0:-1]
     tright, yright = text[-1] + (text[-1] - text[-2:-nref-2:-1]), yext[-2:-nref-2:-1]
     tall = np.concatenate([tleft, text, tright])
     yall = np.concatenate([yleft, yext, yright])
-    
+
     #parse out the min and max. the extrema must alternate, so just figure out
     #whether a min or max comes first
     if yall[0] < yall[1]:
         tmin, tmax, ymin, ymax = tall[::2], tall[1::2], yall[::2], yall[1::2]
-    else: 
+    else:
         tmin, tmax, ymin, ymax = tall[1::2], tall[::2], yall[1::2], yall[::2]
-    
+
     #check again if there are enough extrema, now that the endpoints may have
     #been added
     if len(tmin) < 4 or len(tmax) < 4:
         raise FlatFunction('Too few max and min in the series to sift')
-        
+
     #compute spline enevlopes and mean
     spline_min, spline_max = map(interp1d, [tmin,tmax], [ymin,ymax], ['cubic']*2)
     m = (spline_min(t) + spline_max(t))/2.0
     h = y - m
-    
+
     if plot:
         plt.ioff()
         plt.plot(t,y,'-',t,m,'-')
@@ -956,5 +911,5 @@ def sift(t,y,nref=100,plot=False):
         tmax = np.linspace(tmax[0],tmax[-1],1000)
         plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
         plt.show()
-    
+
     return h
