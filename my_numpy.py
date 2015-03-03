@@ -402,13 +402,23 @@ def empty_arrays(N, dtype=float, shape=None):
         for a in arys: a.shape = shape
     return arys
 
-def inranges(values, ranges):
+def inranges(values, ranges, inclusive=[False, True]):
     """Determines whether values are in the supplied list of sorted ranges.
 
-    ranges can be a nested list of range pairs ([[x00,x01], [x10, x11],
-    [x20, x21], ...]), a single list ([x00,x01,x10,x11,x20,x21,...]), or the
-    np.array equivalents. Values are in a range if range[0] <= value < range[1]
-    unless right=True, then range[0] < value <= range[1].
+    Parameters
+    ----------
+    values : 1-D array-like
+        The values to be checked.
+    ranges : 1-D or 2-D array-like
+        The ranges used to check whether values are in or out.
+        If 2-D, ranges should have dimensions Nx2, where N is the number of
+        ranges. If 1-D, it should have length 2N. A 2xN array may be used, but
+        note that it will be assumed to be Nx2 if N == 2.
+    inclusive : length 2 list of booleans
+        Whether to treat bounds as inclusive. Because it is the default
+        behavior of numpy.searchsorted, [False, True] is the default here as
+        well. Using [False, False] or [True, True] will require roughly triple
+        computation time.
 
     Returns a boolean array indexing the values that are in the ranges.
     """
@@ -417,7 +427,19 @@ def inranges(values, ranges):
         if ranges.shape[1] != 2:
             ranges = ranges.T
         ranges = ranges.ravel()
-    return (np.searchsorted(ranges, values) % 2 == 1)
+
+    if inclusive == [0, 1]:
+        return (np.searchsorted(ranges, values) % 2 == 1)
+    if inclusive == [1, 0]:
+        return (np.searchsorted(ranges, values, side='right') % 2 == 1)
+    if inclusive == [1, 1]:
+        a = (dnp.searchsorted(ranges, values) % 2 == 1)
+        return (np.searchsorted(ranges, values, side='right') % 2 == 1)
+        return (a | b)
+    if inclusive == [0, 0]:
+        a = (np.searchsorted(ranges, values) % 2 == 1)
+        return (np.searchsorted(ranges, values, side='right') % 2 == 1)
+        return (a & b)
 
 def midpts(ary, axis=None):
     """Computes the midpoints between points in a vector.
