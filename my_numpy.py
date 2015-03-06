@@ -464,13 +464,17 @@ def binoverlap(binsa, binsb, method='tight'):
     """
     binsa, binsb = map(np.asarray, [binsa, binsb])
     rng = binsa[[0,-1]]
+    if binsb[0] >= rng[1] or binsb[-1] <= rng[0]:
+        return np.zeros(len(binsb) - 1, bool)
+
     left, right = binsb[:-1], binsb[1:]
-    lin, rin = map(inranges, [left, right], [rng]*2, [[0,0]]*2)
 
     if method == 'tight':
+        lin, rin = map(inranges, [left, right], [rng]*2, [[1,1]]*2)
         return lin & rin
 
     if method == 'loose':
+        lin, rin = map(inranges, [left, right], [rng]*2, [[0,0]]*2)
         result = lin | rin
         #if all of binsa is contained within a single bin in b
         ib = np.searchsorted(binsb, rng) - 1
