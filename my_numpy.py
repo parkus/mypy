@@ -433,13 +433,50 @@ def inranges(values, ranges, inclusive=[False, True]):
     if inclusive == [1, 0]:
         return (np.searchsorted(ranges, values, side='right') % 2 == 1)
     if inclusive == [1, 1]:
-        a = (dnp.searchsorted(ranges, values) % 2 == 1)
-        return (np.searchsorted(ranges, values, side='right') % 2 == 1)
+        a = (np.searchsorted(ranges, values) % 2 == 1)
+        b = (np.searchsorted(ranges, values, side='right') % 2 == 1)
         return (a | b)
     if inclusive == [0, 0]:
         a = (np.searchsorted(ranges, values) % 2 == 1)
-        return (np.searchsorted(ranges, values, side='right') % 2 == 1)
+        b = (np.searchsorted(ranges, values, side='right') % 2 == 1)
         return (a & b)
+
+def binoverlap(binsa, binsb, method='tight'):
+    """
+    Returns the boolean indices of the overlapping bins.
+
+    Parameters
+    ----------
+    binsa : 1d array-like
+        Bin edges. Must be sorted.
+    binsb : 1d array-like
+        Edges of the bins to check for overlap with binsa.
+    method : {'tight'|'loose'}, optional
+        tight (default) : exclude bins that only partially overlap the range
+            of the other set of bins
+        loose : include such bins
+
+    Returns
+    -------
+    overlap : 1d boolean arrays
+        Boolean arrays where True values indicate overlapping bins.
+        len(overlap) == len(binsb) - 1
+    """
+    binsa, binsb = map(np.asarray, [binsa, binsb])
+    rng = binsa[[0,-1]]
+    left, right = binsb[:-1], binsb[1:]
+    lin, rin = map(inranges, [left, right], [rng]*2, [[0,0]]*2)
+
+    if method == 'tight':
+        return lin & rin
+
+    if method == 'loose':
+        result = lin | rin
+        #if all of binsa is contained within a single bin in b
+        ib = np.searchsorted(binsb, rng) - 1
+        if ib[0] == ib[1]:
+            result[ib[0]] = True
+        return result
 
 def midpts(ary, axis=None):
     """Computes the midpoints between points in a vector.
