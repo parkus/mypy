@@ -6,15 +6,16 @@ Created on Wed Oct 22 12:51:23 2014
 """
 
 import numpy as np
-import my_numpy as mnp
+import mypy.my_numpy as mnp
 import statsutils as stats
 import matplotlib.pyplot as plt
 from specutils_bkwd import *
 
-def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
+def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None,
+          masklist=None, extras=None):
     """Coadds spectra of differing wavlength ranges and resolutions according
     to the provided weight factors.
-    
+
     Detailed Description
     --------------------
     coadd begins by generating a common wavelength grid to use for the coadded
@@ -24,19 +25,19 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     rebinned onto this common grid. Spectral bins that fall on the edge of a
     bin on the common grid are divided according to the fraction of the bin
     that falls on each side of the edge. Note that this will result in a
-    statistical dependence between adjacent values in the final coadded 
+    statistical dependence between adjacent values in the final coadded
     spectrum. When multiple source spectrum bins fall in a single coadded
     spectrum bin, weights are averaged across the bin. After rebinning, fluxes
     and weights are summed. Fluxes are then divided by the summed weights
     in each bin.
-    
+
     Error propogation is handled by squaring the flux errors, then treating
     them identically to the flux values (multiplying by weights, rebinning,
     and dividing by summed weights). The square root of the result is then
     taken to produce a final error estimate. This is the standard propogation
     of errors scheme for the summation of weighted measurements, assuming the
     error on the weights is negligible.
-    
+
     Parameters
     ----------
     wavelist : length N list of variable length 1-D numpy arrays
@@ -52,48 +53,63 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
     fluxlist : length N list of variable length 1-D numpy arrays
         Flux vectors corresponding to the wavelength grids. Units must be per
         unit wavelength, matching the wavelength units used in wavelist. Units
-        must also be identical for all vectors. 
-    
+        must also be identical for all vectors.
+
     fluxerrlist : length N list of variable length 1-D numpy arrays
         Flux errors corresponding to the vectors in fluxlist.
-        
-    weights : length N list of scakars or variable length 1-D numpy arrays
+
+    weightlist : list of floats or array-likes
         The weight to be applied to each flux measurement. These can be single
         values to be applied to the entire flux vector or given for each pixel
         (i.e. of identical length to the flux vectors). The most common example
         is exposure time weighting, where weights would be a list of exposure
-        times associated with each spectrum. It is up to the user to provide 
+        times associated with each spectrum. It is up to the user to provide
         weights and flux units that are consistent. Using the exposure time
         example, the flux units should include a per unit time component for
-        weighting by exposure time to provide a correct result. 
-        
+        weighting by exposure time to provide a correct result.
+
+    flaglist : list of array-like, optional
+        Data quality flags to be propagated in a bitwise-or sense. Obviously,
+        if the flags for different arrays mean different things this is
+        pointless.
+
     masklist : list, optional
         A list of boolean arrays to mask out certain pixels. True values
         mean the pixel shouldn't be used.
 
+    extras : 2xN list, optional
+        A list of additional vectors to coadd. Each list entry is a length N
+        list of vectors and a string speciyfing how they should be coadded.
+        Acceptable coaddition methods are 'avg', 'sum', 'min', 'max', and 'or'.
+        For example, to track the start date of the first observation and end
+        date of the last observation contributing to each bin, use
+        >>> extras = [[startdates, 'min'], [enddates, 'max']]
+        where startdates and enddates contain N vectors, each giving the start
+        and end dates for each bin in the N spectra.
+
     Returns
     -------
-        wavelength : a 1-D numpy array where len(wavelength) = len(flux) + 1
-            The bin edges of the common wavelength grid generated for the
-            coaddition.
-            
-        flux : a 1-D numpy array
-            The coadded flux values in the same units as the input fluxes
-            
-        flux err : a 1-D numpy array
-            Errors of the coadded flux values.
-            
-        weightsums : a 1-D numpy array
-            The sum of the weights of the flux values added in each wavelength
-            bin. For example, if exposure times were used as weights, this
-            would be the total exposure time corresponding to the flux
-            measurement in each bin.
+    wavelength : a 1-D numpy array where len(wavelength) = len(flux) + 1
+        The bin edges of the common wavelength grid generated for the
+        coaddition.
+
+    flux : a 1-D numpy array
+        The coadded flux values in the same units as the input fluxes
+
+    flux err : a 1-D numpy array
+        Errors of the coadded flux values.
+
+    weightsums : a 1-D numpy array
+        The sum of the weights of the flux values added in each wavelength
+        bin. For example, if exposure times were used as weights, this
+        would be the total exposure time corresponding to the flux
+        measurement in each bin.
     """
-    
+
     #vet the input
     if masklist is None:
         masklist = [np.zeros(flux.shape, bool) for flux in fluxlist]
-    
+
     lenvec = lambda lst: np.array(map(len, lst))
     wMs, fMs, feMs, mMs = map(lenvec, [wavelist, fluxlist, fluxerrlist, masklist])
     if any(fMs != feMs):
@@ -112,57 +128,73 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, masklist):
                                 'be a float or a numpy array.')
     if any(np.logical_and(wMs != fMs, wMs != (fMs + 1))):
         raise ValueError('All wavelength arrays must have a length equal to '
-                         'or one greater than the corresponding flux array.')         
+                         'or one greater than the corresponding flux array.')
     if any(fMs != mMs):
         raise ValueError('Corresponding flux and weight vectors must be the '
                          'same lengths.')
-    
+
+    flags = flaglist is not None
+    if flags:
+        assert all(fMs == lenvec(flaglist))
+
     #get wavelength edges for any wavelengths that are grids
     welist = []
     for wave, fM in zip(wavelist, fMs):
         we = mnp.mids2edges(wave) if len(wave) == fM else wave
         welist.append(we)
-    
-    #construct common grid
+
+    #construct common grid and get regions where this grid fully overlaps
+    #the other grids (i.e. no partial bins)
     w = common_grid(welist)
-    
+    overlist, woverlist = zip(*[__woverlap(wi, w) for wi in welist])
+
     #coadd the spectra (the m prefix stands for master)
     mfluence, mvar, mweight, mflux, merr = np.zeros([5, len(w)-1])
+    if flags:
+        mflags = np.zeros(len(w)-1, flaglist[0].dtype)
+
     #loop through each order of each x1d
-    for we, flux, err, weight, mask in zip(welist, fluxlist, fluxerrlist, 
-                                           weightlist, masklist):
+    for i in range(len(welist)):
         #intergolate and add flux onto the master grid
+        we, wover, flux = welist[i], woverlist[i], fluxlist[i]
+        err, weight, mask = fluxerrlist[i], weightlist[i], masklist[i]
+        overlap = overlist[i]
         dw = np.diff(we)
         fluence, fluerr = flux*dw*weight, err*dw*weight
         fluence[mask], fluerr[mask] = np.nan, np.nan
-        wrange = we[[0,-1]]
-        overlap = (np.digitize(w, wrange) == 1)
-        wover = w[overlap]
-        addflu = mnp.rebin(wover, we, fluence)
-        addvar = mnp.rebin(wover, we, fluerr**2)
-        addweight = mnp.rebin(wover, we, weight*dw)/np.diff(wover)
+        addflu = mnp.rebin(wover, we, fluence, 'sum')
+        addvar = mnp.rebin(wover, we, fluerr**2, 'sum')
+        addweight = mnp.rebin(wover, we, weight*dw, 'sum')/np.diff(wover)
         addmask = np.isnan(addflu)
         addflu[addmask], addvar[addmask], addweight[addmask] = 0.0, 0.0, 0.0
-        i = np.nonzero(overlap)[0][:-1]
-        mfluence[i] = mfluence[i] +  addflu
-        mvar[i] = mvar[i] + addvar
-        mweight[i] = mweight[i] + addweight
-    
+        mfluence[overlap] = mfluence[overlap] +  addflu
+        mvar[overlap] = mvar[overlap] + addvar
+        mweight[overlap] = mweight[overlap] + addweight
+
+        if flags:
+            addflag = mnp.rebin(wover, we, flaglist[i], 'or')
+            mflags[overlap] = mflags[overlap] | addflag
+
     mdw = np.diff(w)
     mmask = (mweight == 0.0)
     good = np.logical_not(mmask)
     mflux[good] = mfluence[good]/mweight[good]/mdw[good]
     merr[good] = np.sqrt(mvar[good])/mweight[good]/mdw[good]
     mflux[mmask], merr[mmask] = np.nan, np.nan
-    return w, mflux, merr, mweight
-    
+    if flags:
+        return w, mflux, merr, mweight, mflags
+    else:
+        return w, mflux, merr, mweight
+
 def common_grid(wavelist):
     """Generates a common wavelength grid from any number of provided grids
     by using the lowest resolution grid wherever there is overlap.
-    
+
     This is not a great method. Oversampling is still possible. It is fast
-    though. 
+    though.
     """
+    wavelist = sorted(wavelist, key = lambda w: w[0])
+
     #succesively add each grid to a master wavegrid
     #whereever the new one overlaps the old, pick whichever has fewer points
     we = wavelist[0]
@@ -174,12 +206,12 @@ def common_grid(wavelist):
         if we[0] > wei[-1]:
             we = np.append(wei,we)
             continue
-            
+
         #identify where start and end of wei fall in we, and vise versa
-        i0,i1 = np.digitize(wei[[0,-1]], we)
-        j0,j1 = np.digitize(we[[0,-1]], wei)
+        i0,i1 = np.searchsorted(we, wei[[0,-1]])
+        j0,j1 = np.searchsorted(wei, we[[0,-1]])
         #we[i0:i1] is we overlap with wei, wei[j0:j1] is the opposite
-        
+
         #pick whichever has fewer points (lower resolution) for the overlap
         Nwe, Nwei = i1-i0, j1-j0 #no of points for eachch in overlap
         if Nwe < Nwei:
@@ -191,16 +223,71 @@ def common_grid(wavelist):
         else: #same deal
             we_pre, _, we_app = np.split(we, [i0,i1])
             we = np.hstack([we_pre[:-1], wei, we_app[1:]])
-            
+
     return we
-            
-    
-def split(wbins, y, err, trendfit=4, linecut=0.05, contcut=0.05, maxiter=1000,
-          plotsteps=False):
+
+
+def stack_special(wavelist, valuelist, function, commongrid=None,
+                  baseval=0):
+    """
+    Rebin the values to a common wavelength grid and apply the function to
+    compute the stacked result.
+
+    Parameters
+    ----------
+    wavelist : list
+        List of array-likes giving the edges of the wavelength bins for each array
+        of values.
+    list : list
+        List of array-likes with the values to be stacked.
+    function : function or string
+        Function to be applied to list resulting arrays to produce stacked
+        values. Must accept array input and an axis keyword, such as
+        numpy.min. A string can be used to specify 'sum', 'min', 'max', or 'or'.
+    commongrid : 1D array-like, optional
+        The grid to use for rebinning and min-stacking the values. If None,
+        common_grid(wavelist) will be used.
+    baseval : scalar, optional
+        The value to use as the initializion value for the array of stacked
+        values. For example, if arrays were being stacked in an "and" sense,
+        then the user may wish to start with all bins having a value of
+        baseval=True, which may be changed to false as each set of values is
+        successively stacked.
+
+    Returns
+    -------
+    commongrid : 1D array-like
+        Edges of the grid onto which the values have been rebinned and stacked.
+    stack : 1D array-like
+        The min-stack of the values (length is one less than commongrid).
+    """
+    w = common_grid(wavelist) if commongrid is None else commongrid
+    iover, wover = zip(*[__woverlap(wi, w) for wi in wavelist])
+    nullary = np.array([baseval]*(len(w)-1), np.result_type(*valuelist))
+
+    rebinlist = []
+    for io, wo, wi, vi in zip(iover, wover, wavelist, valuelist):
+        rebinned = np.copy(nullary)
+        rebinned[io] = mnp.rebin(wo, wi, vi, function)
+        rebinlist.append(rebinned)
+
+    if function == 'sum':
+        return np.sum(rebinlist, axis=0)
+    elif function == 'or':
+        return reduce(np.bitwise_or, rebinlist)
+    elif function == 'min':
+        return np.min(rebinlist, axis=0)
+    elif function == 'max':
+        return np.max(rebinlist, axis=0)
+    else:
+        return function(rebinlist, axis=0)
+
+def split(wbins, y, err, minlineflux, maxcontflux, trendfit=4, mincontfrac=0.05,
+          plotspec=False, mincontspan=0.8):
     """
     Split a spectrum into its continuum, emission, absorption, and intermediate
     components.
-    
+
     The function fits a trend to the data, then measures how much each run
     of point consecuatively above or below the trend depart from it using
     chi2. The run with the largest chi2 value is removed and a trend is again
@@ -209,11 +296,11 @@ def split(wbins, y, err, trendfit=4, linecut=0.05, contcut=0.05, maxiter=1000,
     test. Different p-values for this test determine
     which runs are identified as lines, which as continuum, and which as
     something in between (see parameters below for elaboration).
-    
+
     Parameters
     ----------
     wbins : 2D array-like, shape 2xN
-        the left (wbins[0]) and right (wbins[1]) edges of the bins in the 
+        the left (wbins[0]) and right (wbins[1]) edges of the bins in the
         spectrum
     y : 1D array-like, length N
         spectrum data
@@ -236,7 +323,7 @@ def split(wbins, y, err, trendfit=4, linecut=0.05, contcut=0.05, maxiter=1000,
     maxiter : int
         Throw an error if this many iterations pass.
     plotsteps : plot the flagged and unflagged data at each iteration
-    
+
     Returns
     -------
     flags : 1D int array, length N
@@ -250,87 +337,116 @@ def split(wbins, y, err, trendfit=4, linecut=0.05, contcut=0.05, maxiter=1000,
                          'represent the edges of the wavelength bins over which '
                          'photons were counted (or flux was integrated).')
     wbins, y, err = map(np.asarray, [wbins, y, err])
-    flags = np.zeros(y.shape, 'i1')
-    
+    dw = wbins[:,1] - wbins[:,0]
+
     #if polynomial fit, make the appropriate trendfit function
     if type(trendfit) is int:
         polyorder = trendfit
         def trendfit(good):
             w0 = (wbins[0,0] + wbins[-1,-1])/2.0
-            _wbins, _y, _err = wbins[good,:], y[good], err[good]
-            fun = mnp.polyfit_binned(_wbins - w0, _y, _err, polyorder)[2]
-            return fun(wbins - w0)[0]
-            
-    #identify lines
-    lines = stats.flag_anomalies(y, test='sw', tol=linecut, trendfit=trendfit,
-                                 plotsteps=plotsteps, maxiter=maxiter)
-    trend = trendfit(~lines)
-    positive = y > trend 
-    flags[lines & positive] = 1 #emission
-    flags[lines & ~positive] = 2 #absoprtion
-    
+            _wbins, _y, _err, _dw = wbins[good,:], y[good], err[good], dw[good]
+            yy = _y*_dw
+            fun = mnp.polyfit_binned(_wbins - w0, yy, _err, polyorder)[2]
+            return fun(wbins - w0)[0]/dw
+    if trendfit == 'median':
+        trendfit = lambda good: np.median(y[good])
+
+    #and a metric that will compute area
+    metric = lambda x: x*dw
+
     #identify continuum
-    #make new trendfit to handle only the retained data
-    cullmap = np.nonzero(~lines)[0] #maps retained data into all data
-    def newtrendfit(newgood):
-        good = np.zeros(y.shape, bool)
-        good[cullmap[newgood]] = True
-        return trendfit(good)
-    intmd = stats.flag_anomalies(y[~lines], test='sw', tol=contcut, 
-                                 trendfit=newtrendfit, plotsteps=plotsteps, 
-                                 maxiter=maxiter)
-    flags[cullmap[~intmd]] = 3 #continuum
-    
+    maxflag = 1.0 - mincontfrac
+    intmd = stats.anomalies(y, maxcontflux, metric, trendfit, maxflag=maxflag)
+    cont = ~intmd
+
+    #check that continuum points span an appropriate length of the spectrum
+    wcont = wbins[cont, :]
+    contspan = wcont[-1, 1] - wcont[0, 0]
+    span = wbins[-1, 1] - wbins[0, 0]
+    if contspan/span < mincontspan:
+        raise Exception("Areas identified as continuum spans less than "
+        "mincontspan = {:.3f} of the full spectrum. Unflagging continuum "
+        "points.".format(mincontspan))
+
+    #subtract the trend fit through the continuum before identifying lines
+    y_detrended = y - trendfit(cont)
+    zero = lambda good: 0.0
+
+    #identify lines
+    lines = stats.anomalies(y_detrended, minlineflux, metric, zero)
+
+    if np.any(lines & cont):
+        raise Exception('Crap.')
+
+    flags = np.zeros(y.shape, 'i1')
+    above = y_detrended > 0.0
+    flags[lines & above] = 1 #emission
+    flags[lines & ~above] = 2 #absoprtion
+    flags[cont] = 3 #continuum
+
+    if plotspec:
+        regular = (flags == 0)
+        lines = (flags == 1) | (flags == 2)
+        cont = (flags == 3)
+        def plotit(pts, color):
+            if np.any(pts):
+                plot(wbins[pts,:], y[pts], color=color)[0]
+        map(plotit, [regular, lines, cont], ['k', 'r', 'g'])
+        tf = plt.gca().transAxes
+        plt.text(0.95, 0.95, 'lines', color='r', transform=tf, ha='right')
+        plt.text(0.95, 0.90, 'continuum', color='g', transform=tf, ha='right')
+
     return flags
-    
+
 def flags2ranges(wbins, flags):
     """
     Identifies and returns the start and end wavelengths for consecutive runs
-    of data with the same flag values.
-    
+    of data that are flagged.
+
     Primarily intended for use with splitspec.
-    
+
     Returns
     -------
     ranges : list of 2xN arrays
-        start and end wavelengths for the runs of each flag value (0 to 
-        max(flags))
+        start and end wavelengths for the runs of each flag value in sorted
+        order (i.e. np.unique(flags))
     """
-    ranges = []
-    for i in range(np.max(flags)):
-        edges = mnp.block_edges(flags == i)
-        left = wbins[0, edges[:-1]]
-        right = wbins[1, edges[1:]]
-        ranges.append(np.vstack([left, right]))
-    return ranges
-                             
+    begs, ends = mnp.block_edges(flags)
+    left = wbins[begs, 0]
+    right = wbins[ends-1, 1]
+    return np.vstack([left, right]).T
+
 def rebin(newedges, oldedges, flux, error, flags=None):
     """
     Rebin a spectrum given the edges of the old and new wavelength grids.
-    
+
     Assumes flux is per wavelength, but otherwise units are irrelevent so long
     as they are consistent.
-    
+
     Returns flux,error for the new grid.
     """
+    newedges, oldedges, flux, error = map(np.asarray,
+                                          [newedges, oldedges, flux, error])
+
     dwold = oldedges[1:] - oldedges[:-1]
     dwnew = newedges[1:] - newedges[:-1]
-    
+
     intflux = flux*dwold
     interror = error*dwold
-    newintflux = mnp.rebin(newedges, oldedges, intflux)
-    newintvar = mnp.rebin(newedges, oldedges, interror**2)
+    newintflux = mnp.rebin(newedges, oldedges, intflux, 'sum')
+    newintvar = mnp.rebin(newedges, oldedges, interror**2, 'sum')
     newinterror = np.sqrt(newintvar)
     result = [newintflux/dwnew, newinterror/dwnew]
     if flags is not None:
-        newflags = mnp.rebin_or(newedges, oldedges, flags)
+        flags = np.asarray(flags)
+        newflags = mnp.rebin(newedges, oldedges, flags, 'or')
         result.append(newflags)
     return result
-    
+
 def plot(wbins, f, *args, **kwargs):
     """
     Plot a spectrum as a stairstep curve, preserving gaps in the data.
-    
+
     Parameters
     ----------
     wbins : 2-D array-like
@@ -343,25 +459,39 @@ def plot(wbins, f, *args, **kwargs):
         keyword arguments to be passed to plot. consider passing color to
         prevent different sections of the spectrum being plotted with different
         colors
-    
+
     Returns
     -------
     plts : list
         List of plot objects.
     """
-    #split the spectrum at any gaps
-    isgap = ~np.isclose(wbins[0,1:], wbins[1,:-1])
+    #fill gaps with nan
+    isgap = ~np.isclose(wbins[1:, 0], wbins[:-1, 1])
     gaps = np.nonzero(isgap)[0] + 1
-    wbinlist = np.split(wbins, gaps, 1)
-    flist = np.split(f, gaps)
-    
-    plts = []
-    for [w0, w1], f in zip(wbinlist, flist):        
-        #make vectors that will plot as a stairstep
-        w = mnp.lace(w0, w1)
-        f = mnp.lace(f, f)
-        
-        #plot stairsteps
-        plts.append(plt.plot(w, f, *args, **kwargs))
-    
-    return plts
+    n = len(gaps)
+    wbins = np.insert(wbins, gaps, np.ones([n, 2])*np.nan, 0)
+    f = np.insert(f, gaps, np.ones(n)*np.nan)
+
+    #make vectors that will plot as a stairstep
+    w = mnp.lace(*wbins.T)
+    ff = mnp.lace(f, f)
+
+    #plot stairsteps
+    p = plt.plot(w, ff, *args, **kwargs)[0]
+
+    return p
+
+def __woverlap(wa, wb):
+    """Find the portion of wb that overlaps wa with no partial bins, then
+    return the idices for the values in those bins (for the b vector) and
+    the wavelengths of the overlapping bin edges for wb."""
+    wrange = wa[[0,-1]]
+    overlap = (np.searchsorted(wrange, wb) == 1)
+    iover = np.nonzero(overlap)[0]
+    if wb[iover[0] - 1] == wrange[0]:
+        overlap[iover[0] - 1] = True
+        iover = iover - 1
+    else:
+        iover = iover[:-1]
+    wover = wb[overlap]
+    return iover, wover

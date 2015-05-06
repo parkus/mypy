@@ -5,10 +5,9 @@ Created on Wed Apr 30 11:43:52 2014
 @author: Parke
 """
 import numpy as np
-from scipy.interpolate import interp1d
-import matplotlib.pyplot as plt
 import warnings
 from crebin.rebin import rebin as crebin
+from my_numpy_bkwd import *
 
 #------------------------------------------------------------------------------
 # backwards compatability
@@ -20,6 +19,7 @@ def rebin_or(newbins, oldbins, oldvalues):
 def rebin_special(newbins, oldbins, oldvalues, function):
     """Deprecated as of 2015-02-15. Use rebin instead."""
     return rebin(newbins, oldbins, oldvalues, method=function)
+
 
 #------------------------------------------------------------------------------
 
@@ -856,123 +856,3 @@ def chi2normseries(x, xerr, y, yerr):
     r = r[np.real(r) > 0]
     r = r[np.argmin(np.abs(np.imag(r)))]
     return float(np.real(r))
-
-def argextrema(y,separate=True):
-    """Returns the indices of the local extrema of a series. When consecutive
-    points at an extreme have the same value, the index of the first is
-    returned.
-    """
-    delta = y[1:] - y[:-1]
-    pos_neg = np.zeros(len(delta), np.int8)
-    pos_neg[delta > 0] = 1
-    pos_neg[delta < 0] = -1
-
-    curve_sign = pos_neg[1:] - pos_neg[:-1]
-
-    if separate:
-        argmax = np.nonzero(curve_sign < 0)[0] + 1
-        argmin = np.nonzero(curve_sign > 0)[0] + 1
-        return argmin,argmax
-    else:
-        argext = np.nonzero(curve_sign != 0)[0] + 1
-        return argext
-
-def emd(t,y,Nmodes=None):
-    """Decompose function into "intrinsic modes" using empirical mode
-    decompisition.
-
-    From Huang et al. (1998; RSPA 454:903).
-
-    Returns c,r, where c is a list of vectors giving the intrinsic mode values
-    at t and r is a vector giving the residual values at t.
-    """
-
-    c = []
-    h, r = [y]*2
-    hold = np.zeros(y.shape)
-    while True:
-        try:
-            while True:
-                h = sift(t,h)
-                var = np.sum((h-hold)**2/hold**2)
-                if var < 0.25:
-                    c.append(h)
-                    r = r - h
-
-                    #if the user doesn't want any more modes
-                    if len(c) == Nmodes:
-                        return c,r
-
-                    h = r
-                    hold = np.zeros(y.shape)
-                    break
-                hold = h
-        except FlatFunction: #if the residue is has too few extrema
-            return c, r
-
-class FlatFunction(Exception):
-    pass
-
-def sift(t,y,nref=100,plot=False):
-    """Identify the dominant "intinsic mode" in a series of data.
-
-    See Huang et al. (1998; RSPA 454:903).
-
-    Identifies the relative max and min in the series, fits spline curves
-    to these to estimate an envelope, then subtracts the mean of the envelope
-    from the series. The difference is then returned. The extrema are refelcted
-    about the extrema nearest each end of the series to mitigate end
-    effects, where nref controls the maximum total number of extrema (max and
-    min) that are reflected.
-    """
-
-    #identify the relative extrema
-    argext = argextrema(y, separate=False)
-
-    #if there are too few extrema, raise an exception
-    if len(argext) < 2:
-        raise FlatFunction('Too few max and min in the series to sift')
-
-    #should we include the right or left endpoints? (if they are beyond the
-    #limits set by the nearest two extrema, then yes)
-    inclleft = not inranges(y[[0]], y[argext[:2]])[0]
-    inclright = not inranges(y[[-1]], y[argext[-2:]])[0]
-    if inclleft and inclright: argext = np.concatenate([[0],argext,[-1]])
-    if inclleft and not inclright: argext = np.insert(argext,0,0)
-    if not inclleft and inclright: argext = np.append(argext,-1)
-    #if neither, do nothing
-
-    #now reflect the extrema about both sides
-    text, yext  = t[argext], y[argext]
-    tleft, yleft = text[0] - (text[nref:0:-1] - text[0]) , yext[nref:0:-1]
-    tright, yright = text[-1] + (text[-1] - text[-2:-nref-2:-1]), yext[-2:-nref-2:-1]
-    tall = np.concatenate([tleft, text, tright])
-    yall = np.concatenate([yleft, yext, yright])
-
-    #parse out the min and max. the extrema must alternate, so just figure out
-    #whether a min or max comes first
-    if yall[0] < yall[1]:
-        tmin, tmax, ymin, ymax = tall[::2], tall[1::2], yall[::2], yall[1::2]
-    else:
-        tmin, tmax, ymin, ymax = tall[1::2], tall[::2], yall[1::2], yall[::2]
-
-    #check again if there are enough extrema, now that the endpoints may have
-    #been added
-    if len(tmin) < 4 or len(tmax) < 4:
-        raise FlatFunction('Too few max and min in the series to sift')
-
-    #compute spline enevlopes and mean
-    spline_min, spline_max = map(interp1d, [tmin,tmax], [ymin,ymax], ['cubic']*2)
-    m = (spline_min(t) + spline_max(t))/2.0
-    h = y - m
-
-    if plot:
-        plt.ioff()
-        plt.plot(t,y,'-',t,m,'-')
-        plt.plot(tmin,ymin,'g.',tmax,ymax,'k.')
-        tmin = np.linspace(tmin[0],tmin[-1],1000)
-        tmax = np.linspace(tmax[0],tmax[-1],1000)
-        plt.plot(tmin,spline_min(tmin),'-r',tmax,spline_max(tmax),'r-')
-        plt.show()
-
-    return h

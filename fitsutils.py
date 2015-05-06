@@ -4,11 +4,7 @@ Created on Fri Jun 13 15:33:34 2014
 
 @author: Parke
 """
-"""!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-THIS MODULE HAS BEEN MOVED TO spectralPhoton AND IS NOW MAINTAINED THERE.
-THIS FILE ONLY KEPT FOR BACKWARDS COMPATIBILITY.
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-"""
+
 from astropy.io import fits
 
 def filterfiles(files, criteria):
@@ -43,4 +39,5 @@ def sortfiles(files, sortby='EXPSTART', hdu=1):
     fkey = zip(files, keyvalues)
     fkey.sort(key=lambda x: x[1])
     return [f[0] for f in fkey]
-    
+
+def pix2wcs(imgfile, axis)
