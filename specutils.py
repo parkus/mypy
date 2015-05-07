@@ -282,20 +282,12 @@ def stack_special(wavelist, valuelist, function, commongrid=None,
     else:
         return function(rebinlist, axis=0)
 
-def split(wbins, y, err, minlineflux, maxcontflux, trendfit=4, mincontfrac=0.05,
-          plotspec=False, mincontspan=0.8):
+
+def split(wbins, y, err, contcut=0.95, linecut=0.999, method='skewness',
+          contfit=4, plotspec=False, maxiter=1000):
     """
     Split a spectrum into its continuum, emission, absorption, and intermediate
     components.
-
-    The function fits a trend to the data, then measures how much each run
-    of point consecuatively above or below the trend depart from it using
-    chi2. The run with the largest chi2 value is removed and a trend is again
-    fitted to the remaining data. At each step, the remaining data are tested
-    for consistency with a gaussian distribution using the Shapiro-Wilks
-    test. Different p-values for this test determine
-    which runs are identified as lines, which as continuum, and which as
-    something in between (see parameters below for elaboration).
 
     Parameters
     ----------
@@ -306,95 +298,102 @@ def split(wbins, y, err, minlineflux, maxcontflux, trendfit=4, mincontfrac=0.05,
         spectrum data
     err : 1D array-like, length N
         error on the spectrum data
-    trendfit : {int|function}, optional
-        Trend to be fit and removed from the data.
-        int : order of a polynomial fit to be used
-        function : user-defined function that returns the fit values at the
-            data points when given a boolean array identifying which points to
-            fit
-    linecut : float
-        The p-value of the shapiro-wilks test at which to record the flagged
-        runs as lines.
-    contcut : float
-        The p-value of the shapiro-wilks test at which to record the remaining
-        (unflagged) data as continuum. Specifying a value that is greater
-        than linecut means some data may be identified as belonging to neither
-        line or continuum regions. This is the "intermediate" data.
-    maxiter : int
+    contfit : {int|function|str}, optional
+        Trend to be fit and removed from the continuum data.
+            int : order of a polynomial fit to be used
+            function : user-defined function that returns the fit values at the
+                data points when given a boolean array identifying which points to
+                fit
+            str : any of the built-in trends for mypy.statutils.clean. As of
+                2015-04-07 these are 'mean' and 'median'.
+    contcut : float, optional
+        Limit for determing continuum data. If method == 'skewness', this is
+        the acceptable probability that the skewness of the continuum could
+        have resulted from an appropriate normal distribution. If method ==
+        'area', it is the maximum allowable area of any feature for it to still
+        be considered continuum.
+    linecut : float, optional
+        Limit for determining line data, similar to contcut. If method ==
+        'skewness', this is the minimum probability below which data should be
+        considered not a result of line emission or absorption. If method ==
+        'area', it is the minimum area for a feature to be considered a line.
+    method : {'skewness'|'area'}, optional
+        If 'skewness', use the skewness statistical test to separate continuum,
+        line, and "unknown" data. If 'area', use the area of bumps above and
+        below the continuum  fit to separate continuum from line.
+    maxiter : int, optional
         Throw an error if this many iterations pass.
-    plotsteps : plot the flagged and unflagged data at each iteration
+    plotspec : {False|True}, optional
+        If True plot the spectrum color-coded by line, continuum, and unknown
+        data.
 
     Returns
     -------
     flags : 1D int array, length N
         An array with values from 0-3 flagging the data as 0-unflagged
-        (intermediate), 1-emission, 2-absorption, 3-continuum. Use the
+        (unknown/intermediate), 1-emission, 2-absorption, 3-continuum. Use the
         flags2ranges function to convert these to wavelength start and end
         values.
+
+    Notes
+    -----
+     - Relies on the mypy.statsutils.clean function.
     """
-    if len(wbins) != len(y):
-        raise ValueError('The shape of wbins must be [len(y), 2]. These '
-                         'represent the edges of the wavelength bins over which '
-                         'photons were counted (or flux was integrated).')
+
     wbins, y, err = map(np.asarray, [wbins, y, err])
-    dw = wbins[:,1] - wbins[:,0]
+    assert len(wbins) == len(y)
+    assert wbins.shape[1] == 2
+    assert method in ['area', 'skewness']
+    dw = wbins[:, 1] - wbins[:, 0]
 
-    #if polynomial fit, make the appropriate trendfit function
-    if type(trendfit) is int:
-        polyorder = trendfit
-        def trendfit(good):
-            w0 = (wbins[0,0] + wbins[-1,-1])/2.0
+    # if polynomial fit, make the appropriate contfit function
+    if type(contfit) is int:
+        # order of the polynomial
+        polyorder = contfit
+
+        # always center polynomial on spectrum
+        wmid = (wbins[0,0] + wbins[-1,-1])/2.0
+
+        # trend function
+        def contfit(good):
             _wbins, _y, _err, _dw = wbins[good,:], y[good], err[good], dw[good]
-            yy = _y*_dw
-            fun = mnp.polyfit_binned(_wbins - w0, yy, _err, polyorder)[2]
-            return fun(wbins - w0)[0]/dw
-    if trendfit == 'median':
-        trendfit = lambda good: np.median(y[good])
+            yy = _y * _dw
+            fun = mnp.polyfit_binned(_wbins - wmid, yy, _err, polyorder)[2]
+            return fun(wbins - wmid)[0] / dw
 
-    #and a metric that will compute area
-    metric = lambda x: x*dw
+    # make metric that will compute area
+    metric = lambda x: x * dw
 
-    #identify continuum
-    maxflag = 1.0 - mincontfrac
-    intmd = stats.anomalies(y, maxcontflux, metric, trendfit, maxflag=maxflag)
-    cont = ~intmd
+    # choose appropriate test
+    test = 'deviation size' if method == 'area' else 'skew'
 
-    #check that continuum points span an appropriate length of the spectrum
-    wcont = wbins[cont, :]
-    contspan = wcont[-1, 1] - wcont[0, 0]
-    span = wbins[-1, 1] - wbins[0, 0]
-    if contspan/span < mincontspan:
-        raise Exception("Areas identified as continuum spans less than "
-        "mincontspan = {:.3f} of the full spectrum. Unflagging continuum "
-        "points.".format(mincontspan))
+    # identify continuum
+    cont = stats.clean(y,  contcut, test, metric, contfit, maxiter=maxiter)
 
-    #subtract the trend fit through the continuum before identifying lines
-    y_detrended = y - trendfit(cont)
-    zero = lambda good: 0.0
+    # subtract the trend fit through the continuum before identifying lines
+    y_detrended = y - contfit(cont)
 
-    #identify lines
-    lines = stats.anomalies(y_detrended, minlineflux, metric, zero)
+    # identify lines
+    lines = ~stats.clean(y_detrended, linecut, test, metric, None,
+                         maxiter=maxiter)
 
+    # make sure there is no overlap between lines and continuum
     if np.any(lines & cont):
-        raise Exception('Crap.')
+        raise ValueError('Lines and continuum overlap. Consider a larger '
+                         'difference between contlim and linelim values.')
 
+    # make integer flag array
     flags = np.zeros(y.shape, 'i1')
     above = y_detrended > 0.0
     flags[lines & above] = 1 #emission
     flags[lines & ~above] = 2 #absoprtion
     flags[cont] = 3 #continuum
 
+    # plot, if desired
     if plotspec:
-        regular = (flags == 0)
-        lines = (flags == 1) | (flags == 2)
-        cont = (flags == 3)
-        def plotit(pts, color):
-            if np.any(pts):
-                plot(wbins[pts,:], y[pts], color=color)[0]
-        map(plotit, [regular, lines, cont], ['k', 'r', 'g'])
-        tf = plt.gca().transAxes
-        plt.text(0.95, 0.95, 'lines', color='r', transform=tf, ha='right')
-        plt.text(0.95, 0.90, 'continuum', color='g', transform=tf, ha='right')
+        labels = ['none of the below', 'emission', 'absorption', 'continuum']
+        labels = [labels[i] for i in np.unique(flags)]
+        color_flags(wbins, y, flags, labels=labels)
 
     return flags
 
@@ -456,9 +455,7 @@ def plot(wbins, f, *args, **kwargs):
     *args :
         arguments to be passed to plot
     *kwargs :
-        keyword arguments to be passed to plot. consider passing color to
-        prevent different sections of the spectrum being plotted with different
-        colors
+        keyword arguments to be passed to plot
 
     Returns
     -------
@@ -480,6 +477,50 @@ def plot(wbins, f, *args, **kwargs):
     p = plt.plot(w, ff, *args, **kwargs)[0]
 
     return p
+
+def color_flags(wbins, y, flags, *args, **kwargs):
+    """
+    Plot flagged spectral data with a different color for each flag.
+
+    Parameters
+    ----------
+    wbins : 2-D array-like
+        Wavlength bin edges as an Nx2 array.
+    f : 1-D array-like
+        Spectral data to plot, len(f) == N.
+    flags : 1-D array-like
+        Flags identifying different types of data. len(flags) == N. An example
+        is continuum, absorption, and emission.
+    *args :
+        arguments to be passed to plot
+    labels : list
+        Uses as keyword. Labels for each flag value, in order.
+    **kwargs :
+        keyword arguments to be passed to plot.
+
+    Returns
+    -------
+    plts : list
+        List of plot objects.
+    """
+    plts = []
+    if 'labels' in kwargs:
+        labels = kwargs['labels']
+        del kwargs['labels']
+    else:
+        labels = None
+
+    for i, fl in enumerate(np.unique(flags)):
+        pts = (flags == fl)
+        if np.any(pts):
+            if labels is not None:
+                kwargs['label'] = labels[i]
+            else:
+                kwargs['label'] = 'flag {}'.format(fl)
+            plts.append(plot(wbins[pts,:], y[pts], *args, **kwargs))
+    plt.legend()
+
+    return plts
 
 def __woverlap(wa, wb):
     """Find the portion of wb that overlaps wa with no partial bins, then
