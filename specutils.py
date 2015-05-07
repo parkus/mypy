@@ -283,7 +283,7 @@ def stack_special(wavelist, valuelist, function, commongrid=None,
         return function(rebinlist, axis=0)
 
 
-def split(wbins, y, err, contcut=0.95, linecut=0.999, method='skewness',
+def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
           contfit=4, plotspec=False, maxiter=1000):
     """
     Split a spectrum into its continuum, emission, absorption, and intermediate
@@ -296,8 +296,9 @@ def split(wbins, y, err, contcut=0.95, linecut=0.999, method='skewness',
         spectrum
     y : 1D array-like, length N
         spectrum data
-    err : 1D array-like, length N
-        error on the spectrum data
+    err : 1D array-like or None, length N
+        error on the spectrum data. only used in fitting a polynomial at the
+        moment, so can be None if type(trendfit) is not int.
     contfit : {int|function|str}, optional
         Trend to be fit and removed from the continuum data.
             int : order of a polynomial fit to be used
