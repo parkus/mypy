@@ -780,6 +780,7 @@ def polyfit_binned(bins, y, yerr, order):
     N, M = order, len(y)
     if type(yerr) in [int,float]: yerr = yerr*np.ones(M)
     bins = np.asarray(bins)
+    assert not np.any(yerr == 0.0)
 
     #some prelim calcs. all matrices are (N+1)xM
     def prelim(bins, M):
