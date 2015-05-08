@@ -282,6 +282,51 @@ def stack_special(wavelist, valuelist, function, commongrid=None,
     else:
         return function(rebinlist, axis=0)
 
+def polyfit(wbins, y, order, err=None):
+    """
+    Fit a centered polynomial to spectral data.
+
+    Parameters
+    ----------
+    wbins : array-like
+        Nx2 array of wavelength bins (gaps okay).
+    y : array-like
+        len(N) array of spectral data, assumed to be per bin unit.
+    order : int
+        order of the polynomial to fit
+    err : array-like or None
+        errors of the specral data
+
+    Returns
+    -------
+    coeffs : 1D array
+        Coefficients of the fit.
+    covar : 2D array
+        Covariance matrix for the coefficients.
+    fitfunc : function
+        Function that evaluates y and yerr when given new bins using the
+        polynomial fit.
+    """
+    wmid = wbins[0, 0] + wbins[-1, 1]
+
+    #integrate the data
+    dw = wbins[:, 1] - wbins[:, 0]
+    yy = y * dw
+    if err is None:
+        ee = np.ones(len(y))
+    else:
+        ee = err * dw
+
+    # fit integrated data
+    coeffs, covar, yyfun = mnp.polyfit_binned(wbins - wmid, yy, ee, order)
+
+    # create function for rapidly computing spectral values from fit
+    def fitfunc(wbins):
+        dw = wbins[:, 1] - wbins[:, 0]
+        yy, ee = yyfun(wbins - wmid)
+        return yy / dw, ee / dw
+
+    return coeffs, covar, fitfunc
 
 def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
           contfit=4, plotspec=False, maxiter=1000):
@@ -356,16 +401,10 @@ def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
         # order of the polynomial
         polyorder = contfit
 
-        # always center polynomial on spectrum
-        wmid = (wbins[0,0] + wbins[-1,-1])/2.0
-
         # trend function
         def contfit(good):
-            _wbins, _y, _err, _dw = wbins[good,:], y[good], err[good], dw[good]
-            yy = _y * _dw
-            ee = _err * dw
-            fun = mnp.polyfit_binned(_wbins - wmid, yy, ee, polyorder)[2]
-            return fun(wbins - wmid)[0] / dw
+            fun = polyfit(wbins[good], y[good], polyorder, err[good])[2]
+            return fun(wbins)[0]
 
     # make metric that will compute area
     metric = lambda x: x * dw
