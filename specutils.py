@@ -301,12 +301,16 @@ def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
         moment, so can be None if type(trendfit) is not int.
     contfit : {int|function|str}, optional
         Trend to be fit and removed from the continuum data.
-            int : order of a polynomial fit to be used
-            function : user-defined function that returns the fit values at the
-                data points when given a boolean array identifying which points to
-                fit
-            str : any of the built-in trends for mypy.statutils.clean. As of
-                2015-04-07 these are 'mean' and 'median'.
+
+        int :
+            order of a polynomial fit to be used
+        function :
+            user-defined function that returns the fit values at the
+            data points when given a boolean array identifying which points to
+            fit
+        str :
+            any of the built-in trends for mypy.statutils.clean. As of
+            2015-04-07 these are 'mean' and 'median'.
     contcut : float, optional
         Limit for determing continuum data. If method == 'skewness', this is
         the acceptable probability that the skewness of the continuum could
@@ -338,7 +342,7 @@ def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
 
     Notes
     -----
-     - Relies on the mypy.statsutils.clean function.
+    - Relies on the mypy.statsutils.clean function.
     """
 
     wbins, y, err = map(np.asarray, [wbins, y, err])
@@ -359,7 +363,8 @@ def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
         def contfit(good):
             _wbins, _y, _err, _dw = wbins[good,:], y[good], err[good], dw[good]
             yy = _y * _dw
-            fun = mnp.polyfit_binned(_wbins - wmid, yy, _err, polyorder)[2]
+            ee = _err * dw
+            fun = mnp.polyfit_binned(_wbins - wmid, yy, ee, polyorder)[2]
             return fun(wbins - wmid)[0] / dw
 
     # make metric that will compute area
