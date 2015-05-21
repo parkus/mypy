@@ -34,7 +34,10 @@ def range_intersect(ranges0, ranges1):
     l1, r1 = rng1.T
     f0, f1 = [rng.flatten() for rng in [rng0, rng1]]
 
-    lin0, rin0, lin1, rin1 = map(inranges, [l0, r0, l1, r1], [f1, f1, f0, f0])
+    lin0 = inranges(l0, f1, [1, 0])
+    rin0 = inranges(r0, f1, [0, 1])
+    lin1 = inranges(l1, f0, [0, 0])
+    rin1 = inranges(r1, f0, [0, 0])
 
     #keep only those edges that are within a good area of the other range
     l = weave(l0[lin0], l1[lin1])
