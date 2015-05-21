@@ -27,6 +27,8 @@ def range_intersect(ranges0, ranges1):
     """
     Return the intersection of two sets of sorted ranges, given as Nx2 array-like.
     """
+    if len(ranges0) == 0 or len(ranges1) == 0:
+        return np.empty([0, 2])
     rng0, rng1 = map(np.asarray, [ranges0, ranges1])
     l0, r0 = rng0.T
     l1, r1 = rng1.T
