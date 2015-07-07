@@ -135,7 +135,8 @@ def runstest(x, divider=None, passfail=False):
             hi, lo = map(array, [hi, lo])
             return (r > hi[n1,n2] or r < lo[n1,n2])
 
-def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000):
+def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
+          printsteps=False):
     """
     Sequentially removes groups of anomalous data until the remaining data
     pases a user-specified test within some tolerance.
@@ -170,7 +171,8 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000):
         Function input allows the user to define a custom test. The function
         must accept two arguments, the trend removed data and a boolean
         array identifying the "clean" data, and return some measure of
-        cleanliness (i.e. the result must be larger if the data are "cleaner").
+        _un_cleanliness (i.e. the result must be smaller if the data are
+        "cleaner").
 
     metric : {string|function}, optional
         Computes tdeviation values for the data. These values are then summed
@@ -269,59 +271,68 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000):
     if type(metric) is str: metric = builtinmetrics[metric.lower()]
 
     ## ITERATIVELY FIT AND FLAG ANOMALIES
-    counter, Nanom, Nstep = 0, 0, 1
-    isclean, start =  False, True
-    good, Ngood, Ngood_old = np.ones(n, bool), n, 0
+    Nanom = 0
+    if printsteps:
+        print 'test value below {} needed to pass'.format(tol)
+        print 'anomalies % bad test'
+        print '--------- ----- ---------'
     while True:
-        # fit the retained data
-        fit = trendfit(good) if trendfit is not None else 0.0
-        x1 = x - fit
+        Ngood_rec = []
+        counter = 0
+        good, good_old, Ngood = np.ones(n, bool), np.zeros(n, bool), n
+        x1 = x
+        while True:
+            Ngood_rec.append(Ngood)
+            Ngood = np.sum(good)
+            counter += 1
 
-        # sum deviations over each run of positive or negative points
-        deviations, splits = __run_deviations(x1, metric)
+            # check vairous conditions for exiting loop
+            if Ngood == 0:
+                raise ValueError('All data removed before test was passed.')
+            if counter > maxiter:
+                raise ValueError('Exceeded allowable number of iterations.')
+            if np.all(good_old == good):
+                # converged!
+                break
+            if counter > 10:
+                if all(n == Ngood_rec[-10] for n in Ngood_rec[-10::2]):
+                # solution is (almost certainly) oscillating
+                    break
+
+            # fit the retained data
+            fit = trendfit(good) if trendfit is not None else 0.0
+            x1 = x - fit
+
+            # sum deviations over each run of positive or negative points
+            deviations, splits = __run_deviations(x1, metric)
+
+            good_old = good
+            if Nanom > 0:
+                # identify the Nanom largest deviations
+                order = np.argsort(deviations)
+                indices = np.arange(len(deviations))
+                sorted_indices = indices[order]
+                anomalies = sorted_indices[-Nanom:]
+
+                # flag those anomalies
+                good = __buildmask(anomalies, splits, n)
+            else:
+                good = np.ones(n, bool)
 
         # check if the remaining data is clean according to the desired
         # condition
-        wasclean = isclean
         if test in ['devsize', 'deviation size']:
-            isclean = np.sum(deviations > tol) <= Nanom
+            # maximum deviation that hasn't been removed
+            result = np.sort(deviations)[-Nanom - 1]
         else:
-            isclean = test(x1, good) < tol
-
-        Ngood = np.sum(good)
-        if isclean and Ngood_old == Ngood:
+            result = test(x1, good)
+        if printsteps:
+            pctbad = (1.0 - float(Ngood) / n) * 100.0
+            print '{:9.0f} {:5.2f} {}'.format(Nanom, pctbad, result)
+        if result < tol:
             return good
-
-        # otherwise, flag some more anomalies
-        ## start by increasing/decreasing the number to add based on how
-        ## fast we're converging
-        if start and isclean == wasclean: Nstep += 1
-        if isclean != wasclean:
-            start = False
-            Nstep = Nstep / 2
-        if Nstep == 0 and Ngood == Ngood_old:
-            Nstep = 1
-        if Nstep > 0:
-            if isclean:
-                Nanom -= Nstep
-                if Nanom < 0: Nanom == 0
-            else:
-                Nanom += Nstep
-
-        # identify the Nanom largest deviations
-        order = np.argsort(deviations)
-        indices = np.arange(len(deviations))
-        sorted_indices = indices[order]
-        anomalies = sorted_indices[-Nanom:]
-
-        # flag those anomalies
-        good = __buildmask(anomalies, splits, n)
-        Ngood_old = Ngood
-        Ngood = np.sum(good)
-
-        counter += 1
-        if counter > maxiter:
-            raise ValueError('Exceeded allowable number of iterations.')
+        else:
+            Nanom += 1
 
 def __run_deviations(x, metric):
     pospts = (x > 0)
