@@ -8,7 +8,7 @@ Created on Fri May 30 17:15:27 2014
 import numpy as np
 import matplotlib as mplot
 import matplotlib.pyplot as plt
-from mayavi import mlab
+#from mayavi import mlab
 from color.maps import true_temp
 
 dpi = 100
@@ -131,89 +131,89 @@ def onscreen_pres(mpl, screenwidth=1200):
     fontsize = round(14 / (800.0 / screenwidth))
     mpl.rcParams['font.size'] = fontsize
 
-def stars3d(ra, dec, dist, T=5000.0, r=1.0, labels='', view=None):
-    """
-    Make a 3D diagram of stars positions relative to the Sun, with
-    semi-accurate colors and distances as desired. Coordinates must be in
-    degrees.
-
-    Meant to be used with only a handful of stars.
-    """
-    n = len(ra)
-    makearr = lambda v: np.array([v] * n) if np.isscalar(v) else v
-    T, r, labels = map(makearr, (T, r, labels))
-
-    # add the sun
-    ra, dec, dist = map(np.append, (ra, dec, dist), (0.0, 0.0, 0.0))
-    r, T, labels = map(np.append, (r, T, labels), (1.0, 5780.0, 'Sun'))
-
-    # get xyz coordinates
-    z = dist * np.sin(dec * np.pi / 180.0)
-    h = dist * np.cos(dec * np.pi / 180.0)
-    x = h * np.cos(ra * np.pi / 180.0)
-    y = h * np.sin(ra * np.pi / 180.0)
-
-    # make figure
-    fig = mlab.figure(bgcolor=(0,0,0), fgcolor=(1,1,1), size=(800,800))
-
-    # plot lines down to the dec=0 plane for all but the sun
-    lines = []
-    for x1, y1, z1 in zip(x, y, z)[:-1]:
-        xx, yy, zz = [x1, x1], [y1, y1], [0.0, z1]
-        line = mlab.plot3d(xx, yy, zz, color=(0.7,0.7,0.7), line_width=0.5,
-                           figure=fig)
-        lines.append(line)
-
-    # plot spheres
-    r_factor = np.max(dist) / 30.0
-    pts = mlab.quiver3d(x, y, z, r, r, r, scalars=T, mode='sphere',
-                        scale_factor=r_factor, figure=fig, resolution=100)
-    pts.glyph.color_mode = 'color_by_scalar'
-
-    # center the glyphs on the data point
-    pts.glyph.glyph_source.glyph_source.center = [0, 0, 0]
-
-    # set a temperature colormap
-    cmap = true_temp(T)
-    pts.module_manager.scalar_lut_manager.lut.table = cmap
-
-    # set the camera view
-    mlab.view(focalpoint=(0.0, 0.0, 0.0))
-    if view is not None:
-        mlab.view(*view)
-
-    ## add labels
-    # unit vec to camera
-    view = mlab.view()
-    az, el = view[:2]
-    hc = np.sin(el * np.pi / 180.0)
-    xc = hc * np.cos(az * np.pi / 180.0)
-    yc = hc * np.sin(az * np.pi / 180.0)
-    zc = -np.cos(el * np.pi / 180.0)
-
-    # unit vec orthoganal to camera
-    if xc**2 + yc**2 == 0.0:
-        xoff = 1.0
-        yoff = 0.0
-        zoff = 0.0
-    else:
-        xoff = yc / np.sqrt(xc**2 + yc**2)
-        yoff = np.sqrt(1.0 - xoff**2)
-        zoff = 0.0
-
-#    xoff, yoff, zoff = xc, yc, zc
-
-    # scale orthogonal vec by sphere size
-    r_label = 1.0 * r_factor
-    xoff, yoff, zoff = [r_label * v for v in [xoff, yoff, zoff]]
-
-    # plot labels
-    size = r_factor / 2.0
-    for xx, yy, zz, label in zip(x, y, z, labels):
-        mlab.text3d(xx + xoff, yy + yoff, zz + zoff, label, figure=fig,
-                    color=(0.5,0.5,0.5), scale=size)
-
-    mlab.draw()
-    return fig
+#def stars3d(ra, dec, dist, T=5000.0, r=1.0, labels='', view=None):
+#    """
+#    Make a 3D diagram of stars positions relative to the Sun, with
+#    semi-accurate colors and distances as desired. Coordinates must be in
+#    degrees.
+#
+#    Meant to be used with only a handful of stars.
+#    """
+#    n = len(ra)
+#    makearr = lambda v: np.array([v] * n) if np.isscalar(v) else v
+#    T, r, labels = map(makearr, (T, r, labels))
+#
+#    # add the sun
+#    ra, dec, dist = map(np.append, (ra, dec, dist), (0.0, 0.0, 0.0))
+#    r, T, labels = map(np.append, (r, T, labels), (1.0, 5780.0, 'Sun'))
+#
+#    # get xyz coordinates
+#    z = dist * np.sin(dec * np.pi / 180.0)
+#    h = dist * np.cos(dec * np.pi / 180.0)
+#    x = h * np.cos(ra * np.pi / 180.0)
+#    y = h * np.sin(ra * np.pi / 180.0)
+#
+#    # make figure
+#    fig = mlab.figure(bgcolor=(0,0,0), fgcolor=(1,1,1), size=(800,800))
+#
+#    # plot lines down to the dec=0 plane for all but the sun
+#    lines = []
+#    for x1, y1, z1 in zip(x, y, z)[:-1]:
+#        xx, yy, zz = [x1, x1], [y1, y1], [0.0, z1]
+#        line = mlab.plot3d(xx, yy, zz, color=(0.7,0.7,0.7), line_width=0.5,
+#                           figure=fig)
+#        lines.append(line)
+#
+#    # plot spheres
+#    r_factor = np.max(dist) / 30.0
+#    pts = mlab.quiver3d(x, y, z, r, r, r, scalars=T, mode='sphere',
+#                        scale_factor=r_factor, figure=fig, resolution=100)
+#    pts.glyph.color_mode = 'color_by_scalar'
+#
+#    # center the glyphs on the data point
+#    pts.glyph.glyph_source.glyph_source.center = [0, 0, 0]
+#
+#    # set a temperature colormap
+#    cmap = true_temp(T)
+#    pts.module_manager.scalar_lut_manager.lut.table = cmap
+#
+#    # set the camera view
+#    mlab.view(focalpoint=(0.0, 0.0, 0.0))
+#    if view is not None:
+#        mlab.view(*view)
+#
+#    ## add labels
+#    # unit vec to camera
+#    view = mlab.view()
+#    az, el = view[:2]
+#    hc = np.sin(el * np.pi / 180.0)
+#    xc = hc * np.cos(az * np.pi / 180.0)
+#    yc = hc * np.sin(az * np.pi / 180.0)
+#    zc = -np.cos(el * np.pi / 180.0)
+#
+#    # unit vec orthoganal to camera
+#    if xc**2 + yc**2 == 0.0:
+#        xoff = 1.0
+#        yoff = 0.0
+#        zoff = 0.0
+#    else:
+#        xoff = yc / np.sqrt(xc**2 + yc**2)
+#        yoff = np.sqrt(1.0 - xoff**2)
+#        zoff = 0.0
+#
+##    xoff, yoff, zoff = xc, yc, zc
+#
+#    # scale orthogonal vec by sphere size
+#    r_label = 1.0 * r_factor
+#    xoff, yoff, zoff = [r_label * v for v in [xoff, yoff, zoff]]
+#
+#    # plot labels
+#    size = r_factor / 2.0
+#    for xx, yy, zz, label in zip(x, y, z, labels):
+#        mlab.text3d(xx + xoff, yy + yoff, zz + zoff, label, figure=fig,
+#                    color=(0.5,0.5,0.5), scale=size)
+#
+#    mlab.draw()
+#    return fig
 
 

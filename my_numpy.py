@@ -448,7 +448,7 @@ def inranges(values, ranges, inclusive=[False, True]):
 
 def binoverlap(binsa, binsb, method='tight'):
     """
-    Returns the boolean indices of the overlapping bins.
+    Returns the boolean indices of the bins in b tha overlap bins in a.
 
     Parameters
     ----------
@@ -464,7 +464,7 @@ def binoverlap(binsa, binsb, method='tight'):
     Returns
     -------
     overlap : 1d boolean arrays
-        Boolean arrays where True values indicate overlapping bins.
+        Boolean array where True values indicate overlapping bins.
         len(overlap) == len(binsb) - 1
     """
     binsa, binsb = map(np.asarray, [binsa, binsb])
@@ -500,7 +500,7 @@ def midpts(ary, axis=None):
         lo = np.split(ary, [-1], axis=axis)[0]
         return (hi+lo)/2.0
 
-def shorten_jumps(vec,maxjump,newjump=None):
+def shorten_jumps(vec, maxjump, newjump=None):
     """Finds jumps > maxjump in a vector of increasing values and shortens the
     jump to newjump.
 
@@ -523,21 +523,32 @@ def shorten_jumps(vec,maxjump,newjump=None):
 def divvy(ary, bins, keyrow=0):
     """
     Divvys up the points in the input vector or array into the indicated
-    bins.
+    bins. Points outside the bins are discarded.
 
-    Row keyrow of the array is used to divvy up the array.
+    Parameters
+    ----------
+    ary : 2D array-like
+        The array of values, each row a different dimension of the data.
+    bins : 1D array-like
+        Edges of the bins, similar to histogram. Must be in ascending order.
+    keyrow : int
+        The row to use for checking if each column is a data point in bin.
 
-    Returns a list of arrays, each array containing the points in the
-    corresponding bins. Points outside of the bins are discarded. Bins is a
-    vector of the bin edges and must be in ascending order.
+    Returns
+    -------
+    divvied_ary : list
+        A list of 2D arrays of length len(bins) - 1.
 
+    """
+
+    """
     I tested this against looping throught the bins and removing points from
     the vector that were in the bin at each iteration and this was slightly
     faster.
     """
     ary = np.asarray(ary)
     if ary.ndim == 1: ary = ary.reshape([1,len(ary)])
-    ivec = np.digitize(ary[keyrow,:], bins)
+    ivec = np.searchsorted(bins, ary[keyrow,:])
     divvied = [ary[:, ivec == i] for i in np.arange(1,len(bins))]
 
     return divvied

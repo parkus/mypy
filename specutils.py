@@ -10,6 +10,7 @@ import mypy.my_numpy as mnp
 import statsutils as stats
 import matplotlib.pyplot as plt
 from specutils_bkwd import *
+from scipy.stats import skew
 
 def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None,
           masklist=None, extras=None):
@@ -307,7 +308,7 @@ def polyfit(wbins, y, order, err=None):
         Function that evaluates y and yerr when given new bins using the
         polynomial fit.
     """
-    wmid = wbins[0, 0] + wbins[-1, 1]
+    wmid = (wbins[0, 0] + wbins[-1, 1]) / 2.0
 
     #integrate the data
     dw = wbins[:, 1] - wbins[:, 0]
@@ -328,7 +329,7 @@ def polyfit(wbins, y, order, err=None):
 
     return coeffs, covar, fitfunc
 
-def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
+def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
           contfit=4, plotspec=False, maxiter=1000):
     """
     Split a spectrum into its continuum, emission, absorption, and intermediate
@@ -367,8 +368,10 @@ def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
         'skewness', this is the minimum probability below which data should be
         considered not a result of line emission or absorption. If method ==
         'area', it is the minimum area for a feature to be considered a line.
-    method : {'skewness'|'area'}, optional
-        If 'skewness', use the skewness statistical test to separate continuum,
+    method : {'skewness'|'skewtest'|'area'}, optional
+        If 'skewness' use the absolute value of the skewness sample statistic.
+        If 'skewtest' use the
+        p-value of the skewness statistical test to separate continuum,
         line, and "unknown" data. If 'area', use the area of bumps above and
         below the continuum  fit to separate continuum from line.
     maxiter : int, optional
@@ -393,7 +396,7 @@ def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
     wbins, y, err = map(np.asarray, [wbins, y, err])
     assert len(wbins) == len(y)
     assert wbins.shape[1] == 2
-    assert method in ['area', 'skewness']
+    assert method in ['area', 'skewness', 'skewtest']
     dw = wbins[:, 1] - wbins[:, 0]
 
     # if polynomial fit, make the appropriate contfit function
@@ -410,13 +413,21 @@ def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
     metric = lambda x: x * dw
 
     # choose appropriate test
-    test = 'deviation size' if method == 'area' else 'skew'
+    if method == 'area':
+        test = 'deviation size'
+    if method == 'skewtest':
+        test = 'skew'
+    if method == 'skewness':
+        def test(x, good):
+            return abs(skew(x[good]))
 
     # identify continuum
-    cont = stats.clean(y,  contcut, test, metric, contfit, maxiter=maxiter)
+    cont = stats.clean(y, contcut, test, metric, contfit, maxiter=maxiter,
+                       printsteps=True)
 
     # subtract the trend fit through the continuum before identifying lines
-    y_detrended = y - contfit(cont)
+    yfit = contfit(cont)
+    y_detrended = y - yfit
 
     # identify lines
     lines = ~stats.clean(y_detrended, linecut, test, metric, None,
@@ -439,6 +450,8 @@ def split(wbins, y, err=None, contcut=0.95, linecut=0.999, method='skewness',
         labels = ['none of the below', 'emission', 'absorption', 'continuum']
         labels = [labels[i] for i in np.unique(flags)]
         color_flags(wbins, y, flags, labels=labels)
+        plot(wbins, yfit, '--', label='continuum fit')
+        plt.legend()
 
     return flags
 
