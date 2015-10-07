@@ -135,8 +135,7 @@ def runstest(x, divider=None, passfail=False):
             hi, lo = map(array, [hi, lo])
             return (r > hi[n1,n2] or r < lo[n1,n2])
 
-def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
-          printsteps=False):
+def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000, printsteps=False):
     """
     Sequentially removes groups of anomalous data until the remaining data
     pases a user-specified test within some tolerance.
@@ -147,8 +146,8 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
         The data series to be analyzed for anomalies.
 
     tol : float
-        Tolerance. When the value returned by testing the cleaned data exceeds
-        this level, the data are considered succesfully cleaned.
+        Tolerance. When the value returned by testing the cleaned data is below
+        this level, the data are considered successfully cleaned.
 
     test : {function|string}, optional
         Measures the "cleanliness" of the data, generally by computing the
@@ -181,7 +180,7 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
         Built in metrics currently include:
             - 'len' : the number of points in the run
             - 'chi2' : the chi2 statistic for the run assuming unit variance
-            - 'area' : absolute area under the curve for the run
+            - 'area' : area under the curve for the run
 
         Function input must accept an single array (the detrended) data and
         return a single array of equal length. For example, the 'area'
@@ -248,7 +247,7 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
     ## PARSE THE INPUT
     n = len(x)
 
-    # construct built in test function
+    # construct built in *statisctical* test function (others also built in)
     builtintests = {'runs':runstest, 'r':runstest, 'shapiro-wilks':shapiro,
                     'shapiro':shapiro, 'sw':shapiro, 'skew':skewtest}
     if test in builtintests:
@@ -286,7 +285,7 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
             Ngood = np.sum(good)
             counter += 1
 
-            # check vairous conditions for exiting loop
+            # check various conditions for exiting loop
             if Ngood == 0:
                 raise ValueError('All data removed before test was passed.')
             if counter > maxiter:
@@ -296,7 +295,7 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
                 break
             if counter > 10:
                 if all(n == Ngood_rec[-10] for n in Ngood_rec[-10::2]):
-                # solution is (almost certainly) oscillating
+                    # solution is (almost certainly) oscillating
                     break
 
             # fit the retained data
@@ -309,7 +308,7 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
             good_old = good
             if Nanom > 0:
                 # identify the Nanom largest deviations
-                order = np.argsort(deviations)
+                order = np.argsort(np.abs(deviations))
                 indices = np.arange(len(deviations))
                 sorted_indices = indices[order]
                 anomalies = sorted_indices[-Nanom:]
@@ -324,6 +323,10 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000,
         if test in ['devsize', 'deviation size']:
             # maximum deviation that hasn't been removed
             result = np.sort(deviations)[-Nanom - 1]
+        elif test in ['sigma clip']:
+            # maximum deviation in std dev from mean
+            clean_devs = np.sort(deviations)[:(len(deviations)-Nanom)]
+            result = np.abs(clean_devs[-1] - np.median(clean_devs)) / np.std(clean_devs)
         else:
             result = test(x1, good)
         if printsteps:
