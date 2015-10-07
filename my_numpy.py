@@ -407,6 +407,26 @@ def empty_arrays(N, dtype=float, shape=None):
         for a in arys: a.shape = shape
     return arys
 
+
+def smooth(x, n, safe=True):
+    """
+    Compute an n-point moving average of the data in vector x. Result will have a length of len(x) - (n-1). Using
+    save avoids the arithmetic overflow and accumulated errors that can result from using numpy.cumsum, though cumsum
+    is (probably) faster.
+    """
+    assert x.ndim == 1
+    if safe:
+        m = len(x)
+        result = np.zeros(m - (n-1))
+        for i in xrange(n):
+            result += x[i:(m-n+i+1)]
+        return result / float(n)
+    else:
+        s = np.cumsum(x)
+        s = np.insert(s, 0, 0.0)
+        return (s[n:] - s[:-n]) / float(n)
+
+
 def inranges(values, ranges, inclusive=[False, True]):
     """Determines whether values are in the supplied list of sorted ranges.
 
@@ -519,6 +539,7 @@ def shorten_jumps(vec, maxjump, newjump=None):
     vec_new = jumps.cumsum()
     midjump = (vec_new[jumpindex-1] + vec_new[jumpindex])/2.0
     return vec_new, midjump, jumplen
+
 
 def divvy(ary, bins, keyrow=0):
     """
@@ -753,13 +774,22 @@ def corrcoef(x, y):
 
 def flagruns(x):
     """
-    Flag portionso f x where succesive points have the same value.
+    Flag portions of x where succesive points have the same value.
     """
     x = np.asarray(x)
     leqr = (x[:-1] == x[1:])
     leqr = np.insert(leqr, [0, len(leqr)], [False, False])
     flags = (leqr[:-1] | leqr[1:])
     return flags
+
+
+def runslices(x):
+    """
+    Return the slice indices that separate runs in x. Great for use with splitsum.
+    """
+    pospts = (x > 0)
+    return np.nonzero(pospts[1:] - pospts[:-1])[0] + 1
+
 
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
