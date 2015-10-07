@@ -330,7 +330,7 @@ def polyfit(wbins, y, order, err=None):
     return coeffs, covar, fitfunc
 
 def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
-          contfit=4, plotspec=False, maxiter=1000):
+          contfit=4, plotspec=False, maxiter=1000, silent=False):
     """
     Split a spectrum into its continuum, emission, absorption, and intermediate
     components.
@@ -423,7 +423,7 @@ def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
 
     # identify continuum
     cont = stats.clean(y, contcut, test, metric, contfit, maxiter=maxiter,
-                       printsteps=True)
+                       printsteps=(not silent))
 
     # subtract the trend fit through the continuum before identifying lines
     yfit = contfit(cont)
