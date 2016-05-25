@@ -6,7 +6,7 @@ Created on Wed Oct 22 12:51:23 2014
 """
 
 import numpy as np
-import mypy.my_numpy as mnp
+import my_numpy as mnp
 import statsutils as stats
 import matplotlib.pyplot as plt
 from specutils_bkwd import *
@@ -337,8 +337,8 @@ def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
 
     Parameters
     ----------
-    wbins : 2D array-like, shape 2xN
-        the left (wbins[0]) and right (wbins[1]) edges of the bins in the
+    wbins : 2D array-like, shape Nx2
+        the left (wbins[:.0]) and right (wbins[:,1]) edges of the bins in the
         spectrum
     y : 1D array-like, length N
         spectrum data
@@ -393,6 +393,8 @@ def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
     - Relies on the mypy.statsutils.clean function.
     """
 
+    if err is None:
+        err = np.ones_like(y)
     wbins, y, err = map(np.asarray, [wbins, y, err])
     assert len(wbins) == len(y)
     assert wbins.shape[1] == 2
@@ -455,6 +457,49 @@ def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
 
     return flags
 
+
+def adaptive_continuum(wbins, y, window, skew_test_pass=0.95, maxiter=1000):
+
+    wbins, y = map(np.asarray, [wbins, y])
+    assert len(wbins) == len(y)
+    assert wbins.shape[1] == 2
+    if y.ndim > 1 and y.shape[1] == 1: y = y.T
+
+    wmid = (wbins[:,0] + wbins[:,1])/2.0
+    n = np.round((wmid[-1] - wmid[0]) / window)
+    edges = np.linspace(wmid[0], wmid[-1], n)
+
+    data = np.vstack((wmid, wbins.T, y))
+    pieces = mnp.divvy(data, edges, 0)
+
+    cont_pieces = []
+    for piece in pieces:
+        wbins = piece[1:3].T
+        y = piece[3]
+
+        dw = wbins[:,1] - wbins[:,0]
+
+        #trend function
+        # def contfit(good):
+        #     fun = polyfit(wbins[good], y[good], 1)[2]
+        #     return fun(wbins)[0]
+        # def contfit(good):
+        #     return np.mean(y[good])
+        def contfit(good):
+            return np.median(y[good])
+
+        # make metric that will compute area
+        metric = lambda x: x * dw
+
+        # identify continuum
+        try:
+            cont = stats.clean(y, skew_test_pass, 'runs', metric, contfit, maxiter=maxiter)
+        except:
+            cont = np.zeros_like(y, bool)
+        cont_pieces.append(cont)
+
+    return np.hstack(cont_pieces)
+
 def flags2ranges(wbins, flags):
     """
     Identifies and returns the start and end wavelengths for consecutive runs
@@ -512,6 +557,10 @@ def plot(wbins, f, *args, **kwargs):
         Spectral data to plot, len(f) == N.
     *args :
         arguments to be passed to plot
+    err :
+        error to plot as polygon
+    ealpha :
+        transparency of error polygon
     *kwargs :
         keyword arguments to be passed to plot
 
@@ -520,19 +569,30 @@ def plot(wbins, f, *args, **kwargs):
     plts : list
         List of plot objects.
     """
+
+    err = kwargs.pop('err', None)
+    ealpha = kwargs.pop('ealpha', 0.15)
+
     #fill gaps with nan
     isgap = ~np.isclose(wbins[1:, 0], wbins[:-1, 1])
     gaps = np.nonzero(isgap)[0] + 1
     n = len(gaps)
     wbins = np.insert(wbins, gaps, np.ones([n, 2])*np.nan, 0)
-    f = np.insert(f, gaps, np.ones(n)*np.nan)
+    f = np.insert(f, gaps, [np.nan]*n)
 
     #make vectors that will plot as a stairstep
     w = mnp.lace(*wbins.T)
     ff = mnp.lace(f, f)
 
     #plot stairsteps
-    p = plt.plot(w, ff, *args, **kwargs)[0]
+    ax = kwargs.pop('ax', plt.gca())
+    p = ax.plot(w, ff, *args, **kwargs)[0]
+
+    if err is not None:
+        err = np.insert(err, gaps, [np.nan]*n)
+        ee = mnp.lace(err, err)
+        e = ax.fill_between(w, ff-ee, ff+ee, color=p.get_color(), alpha=ealpha, edgecolor='none')
+        return p, e
 
     return p
 

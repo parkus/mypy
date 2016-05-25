@@ -6,10 +6,16 @@ Created on Wed May 21 14:10:49 2014
 """
 import numpy as np
 from scipy.integrate import quad
-from math import erf
-import pdb
+import scipy.special as ss
+import math
 
 __all__ = ['optimal_grid','confidence_interval','gauss_findpt']
+
+
+def inv_gauss_cdf(prob):
+    """Find the value where a unit gaussian CDF has *two-tailed* probability prob."""
+    return abs(math.sqrt(2) * ss.erfinv(prob - 1))
+
 
 def gauss_integrate_tail(pdf, a, b, sigma_guess=1.0):
     """Rapidly integrates the tail of a gaussian by assuming that it can be
@@ -34,7 +40,7 @@ def gauss_integrate_tail(pdf, a, b, sigma_guess=1.0):
     B = np.log(p2/p1)/(x1**2 - x2**2)
     A = p1*np.exp(B*x1**2)
     rootB = np.sqrt(B)
-    return A/2*np.sqrt(np.pi)/rootB*(erf(rootB*b) - erf(rootB*a))
+    return A/2*np.sqrt(np.pi)/rootB*(ss.erf(rootB*b) - ss.erf(rootB*a))
 
 def gauss_integrate(pdf, mu, a, b, sigma_guess=1.0, epsabs=1.49e-8):
     """NOT FULLY WRITTEN. Use the fact that most pdfs are gaussian-like to 

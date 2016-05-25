@@ -14,7 +14,67 @@ dpi = 100
 fullwidth = 10.0
 halfwidth = 5.0
 
-def tight_axis_limits(ax, xory='both', margin=0.05, datalim=None):
+# use these with line.set_dashes and iterate through more linestyles than come with matplotlib
+# consider ussing a ::2 slice for fewer
+dashes = [[],
+          [30, 10],
+          [20, 8],
+          [10, 5],
+          [3, 2],
+          [30, 5, 3, 5, 10, 5, 3, 5],
+          [15] + [5, 3]*3 + [5],
+          [15] + [5, 3]*2 + [5],
+          [15] + [5, 3] + [5]]
+
+
+def textSize(ax_or_fig=None, coordinate='data'):
+    """
+    Return x & y scale factors for converting text sizes in points to another coordinate. Useful for properly spacing
+    text labels and such when you need to know sizes before the text is made (otherwise you can use textBoxSize).
+
+    Coordinate can be 'data', 'axes', or 'figure'.
+
+    If data coordinates are requested and the data is plotted on a log scale, then the factor will be given in dex.
+
+    """
+    if ax_or_fig is None:
+        fig = plt.gcf()
+        ax = fig.gca()
+    else:
+        if isinstance(ax_or_fig, plt.Figure):
+            fig = ax_or_fig
+            ax = fig.gca()
+        elif isinstance(ax_or_fig, plt.Axes):
+            ax = ax_or_fig
+            fig = ax.get_figure()
+        else:
+            raise TypeError('ax_or_fig must be a Figure or Axes instance, if given.')
+
+    w_fig_in, h_fig_in = ax.get_figure().get_size_inches()
+
+    if coordinate == 'fig':
+        return 1.0/(w_fig_in*72), 1.0/(h_fig_in*72)
+
+    w_ax_norm, h_ax_norm = ax.get_position().size
+    w_ax_in = w_ax_norm * w_fig_in
+    h_ax_in = h_ax_norm * h_fig_in
+    w_ax_pts, h_ax_pts = w_ax_in*72, h_ax_in*72
+
+    if coordinate == 'axes':
+        return 1.0/w_ax_pts, 1.0/h_ax_pts
+
+    if coordinate == 'data':
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        if ax.get_xscale() == 'log': xlim = np.log10(xlim)
+        if ax.get_yscale() == 'log': ylim = np.log10(ylim)
+        w_ax_data = xlim[1] - xlim[0]
+        h_ax_data = ylim[1] - ylim[0]
+        return w_ax_data/w_ax_pts, h_ax_data/h_ax_pts
+
+
+def tight_axis_limits(ax=None, xory='both', margin=0.05, datalim=None):
+    if ax is None: ax = plt.gca()
 
     def newlim(oldlim):
         delta = abs(oldlim[1] - oldlim[0])
@@ -40,12 +100,12 @@ def tight_axis_limits(ax, xory='both', margin=0.05, datalim=None):
             return oldlim
 
     if xory == 'x' or xory == 'both':
-        if datalim == None: datalim = ax.dataLim.extents[[0,2]]
+        if datalim is None: datalim = ax.dataLim.extents[[0,2]]
         axlim = ax.get_xlim()
         scale = ax.get_xscale()
         ax.set_xlim(newlim_either(datalim,axlim,scale))
     if xory == 'y' or xory == 'both':
-        if datalim == None: datalim = ax.dataLim.extents[[1,3]]
+        if datalim is None: datalim = ax.dataLim.extents[[1,3]]
         axlim = ax.get_ylim()
         scale = ax.get_yscale()
         ax.set_ylim(newlim_either(datalim,axlim,scale))
@@ -107,7 +167,7 @@ def errorpoly(x, y, yerr, fmt=None, ecolor=None, ealpha=0.5, ax=None, **kw):
         yhi = y + yerr[1,:]
     else:
         ylo, yhi = y - yerr, y + yerr
-    if ecolor == None: ecolor = p[0].get_color()
+    if ecolor is None: ecolor = p[0].get_color()
 
     # deal with matplotlib sometimes not showing polygon when it extends beyond plot range
     xlim = ax.get_xlim()

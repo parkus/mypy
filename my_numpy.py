@@ -8,6 +8,8 @@ import numpy as np
 import warnings
 from crebin.rebin import rebin as crebin
 from my_numpy_bkwd import *
+from scipy.integrate import quad as _quad
+from astropy import constants as _const, units as _u
 
 #------------------------------------------------------------------------------
 # backwards compatability
@@ -23,13 +25,21 @@ def rebin_special(newbins, oldbins, oldvalues, function):
 
 #------------------------------------------------------------------------------
 
-def range_intersect(ranges0, ranges1):
+
+def rangeset_intersect(ranges0, ranges1, presorted=False):
     """
     Return the intersection of two sets of sorted ranges, given as Nx2 array-like.
     """
+
     if len(ranges0) == 0 or len(ranges1) == 0:
         return np.empty([0, 2])
     rng0, rng1 = map(np.asarray, [ranges0, ranges1])
+
+    if not presorted:
+        rng0, rng1 = [r[np.argsort(r[:,0])] for r in [rng0, rng1]]
+    for rng in [rng0, rng1]:
+        assert np.all(rng[1:] > rng[:-1])
+
     l0, r0 = rng0.T
     l1, r1 = rng1.T
     f0, f1 = [rng.flatten() for rng in [rng0, rng1]]
@@ -43,6 +53,29 @@ def range_intersect(ranges0, ranges1):
     l = weave(l0[lin0], l1[lin1])
     r = weave(r0[rin0], r1[rin1])
     return np.array([l, r]).T
+range_intersect = rangeset_intersect
+
+
+def rangeset_invert(ranges):
+    edges = ranges.ravel()
+    midrngs = edges[1:-1].reshape([-1, 2])
+    if edges[0] != -np.inf:
+        firstrng = [[-np.inf, edges[0]]]
+    if edges[-1] != np.inf:
+        lastrng = [[edges[-1], np.inf]]
+    return np.vstack([firstrng, midrngs, lastrng])
+
+
+def rangeset_union(ranges0, ranges1):
+    invrng0, invrng1 = map(rangeset_invert, [ranges0, ranges1])
+    xinv = range_intersect(invrng0, invrng1)
+    return rangeset_invert(xinv)
+
+
+def rangeset_subtract(baseranges, subranges):
+    """Subtract subranges from baseranges, given as Nx2 arrays."""
+    return range_intersect(baseranges, rangeset_invert(subranges))
+
 
 def weave(a, b):
     """
@@ -401,6 +434,7 @@ def block_edges(ary):
     end, = np.nonzero(chng == -1)
     return beg,end
 
+
 def empty_arrays(N, dtype=float, shape=None):
     arys = [np.array([],dtype) for i in range(N)]
     if shape != None:
@@ -758,6 +792,8 @@ def rebin(newbins, oldbins, values, method='sum'):
 
     assert len(nv) == len(nb) - 1
     return nv.astype(dt)
+
+
 def corrcoef(x, y):
     """
     Compute the correlation coefficient between rows of x and y.
@@ -903,3 +939,81 @@ def chi2normseries(x, xerr, y, yerr):
     r = r[np.real(r) > 0]
     r = r[np.argmin(np.abs(np.imag(r)))]
     return float(np.real(r))
+
+
+def voigt_xsection(w, w0, f, gamma, T, mass):
+    """
+    Compute the absorption cross section using hte voigt profile for a line.
+
+    Parameters
+    ----------
+    w : astropy quantity array or scalar
+        Scalar or vector of wavelengths at which to compute cross section.
+    w0: quanitity
+        Line center wavelength.
+    f: scalar
+        Oscillator strength.
+    gamma: quantity
+        Sum of transition rates (A values) out of upper and lower states. Just Aul for a resonance line where only
+        spontaneous decay is an issue.
+    T: quantity
+        Temperature of the gas.
+
+    Returns
+    -------
+    x : quantity
+        Cross section of the line at each w.
+    """
+
+    nu = _const.c / w
+    nu0 = _const.c / w0
+    sigma_dopp = np.sqrt(_const.k_B*T/mass)
+    phi = voigt_profile(nu, nu0, sigma_dopp, gamma)
+    x = np.pi*_const.e.esu**2/_const.m_e/_const.c * f * phi
+    return x.to('cm2')
+
+
+def voigt_profile(nu, nu0, sigma_dopp, gamma):
+    """
+    Compute the normalized Voigt profile values at w.
+
+    Parameters
+    ----------
+    v : 1D array or scalar quantity
+        Locations to compute Voigt profile.
+    v0 : scalar quanitity
+        Center of  Voigt profile.
+    sigma_dopp: scalar quantity
+        Std dev of velocity gaussian sqrt(kT/M)
+    gamma: scalar quantity
+        Lorentzian scale parameter.
+
+    Returns
+    -------
+    phi : 1D array or scalar
+        Value of normalized Voigt function at each v.
+
+    """
+
+    try:
+        nu[0]
+    except TypeError:
+        nu = _u.Quantity([nu])
+
+    #FIXME replace with astropy version once version 1.1.2 is out
+
+    sigma_dopp = sigma_dopp.to('km/s').value
+    c = _const.c.to('km/s').value
+    nu = nu.to('s-1').value
+    nu0 = nu0.to('s-1').value
+    gamma = gamma.to('s-1').value
+
+    phi = []
+    for _nu in nu:
+        integrand = lambda v: np.exp(-v**2/2/sigma_dopp**2)/sigma_dopp * \
+                              4*gamma/(16*np.pi**2*(_nu - (1 - v/c)*nu0)**2 + gamma**2)
+        val = _quad(integrand, -np.inf, np.inf, epsrel=0.001)[0] / np.sqrt(2*np.pi)
+        phi.append(val)
+
+    phi = np.array(phi) * _u.s
+    return phi.decompose()

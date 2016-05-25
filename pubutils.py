@@ -20,6 +20,11 @@ def mergeBibs(input_dir, savepath):
     entries = rekeyBib(entries)
 
     bibstr = '\n\n'.join(entries) + '\n'
+
+    # apparently ADS sometimes likes to put \# in the entries. clean those out
+    bibstr = bibstr.replace('\\#', '')
+    bibstr = bibstr.replace('#', '')
+
     with open(savepath, 'w') as f:
         f.write(bibstr)
 
@@ -50,7 +55,6 @@ def rekeyBib(entryList):
     pairs = sorted(pairs, key=sortkey)
 
     # loop through and add 'a', 'b', ... to duplicates, sorted by month of publication
-    month_abbrs = [month.lower() for month in calendar.month_abbr]
     i = 0
     while i < (len(pairs) - 1):
         j = i + 1
@@ -60,13 +64,8 @@ def rekeyBib(entryList):
             i += 1
             continue
         else:
-            def sortkey(pair):
-                entry = pair[0]
-                match = re.search(r'month = (\w*),', entry)
-                month_abbr = match.group(1)
-                return month_abbrs.index(month_abbr)
             group = pairs[i:j]
-            group = sorted(group, key=sortkey)
+            group = sorted(group, key=_get_month)
             for k, (entry, key) in enumerate(group):
                 key += alphabet[k]
                 group[k] = (entry, key)
@@ -80,6 +79,14 @@ def rekeyBib(entryList):
         entries.append(entry)
 
     return entries
+
+
+_month_abbrs = [month.lower() for month in calendar.month_abbr]
+def _get_month(pair):
+        entry = pair[0]
+        match = re.search(r'month = (\w*),', entry)
+        month_abbr = match.group(1)
+        return _month_abbrs.index(month_abbr)
 
 
 def bibEntryKey(entry):
@@ -100,7 +107,7 @@ def bibEntryKey(entry):
     lastname = entry[start:stop]
 
     # split at whitespace, keep first piece not matching a throwaway article
-    toss = ['von', 'de']
+    toss = ['von', 'de', 'van']
     pieces = lastname.split()
     keep = 0
     while (pieces[keep][-1] == '.') or (pieces[keep].lower() in toss):
