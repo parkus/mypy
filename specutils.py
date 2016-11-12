@@ -8,12 +8,12 @@ Created on Wed Oct 22 12:51:23 2014
 import numpy as np
 import my_numpy as mnp
 import statsutils as stats
+import pdfutils as pu
 import matplotlib.pyplot as plt
 from specutils_bkwd import *
 from scipy.stats import skew
 
-def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None,
-          masklist=None, extras=None):
+def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None, masklist=None, extras=None):
     """Coadds spectra of differing wavlength ranges and resolutions according
     to the provided weight factors.
 
@@ -134,6 +134,8 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None,
         raise ValueError('Corresponding flux and weight vectors must be the '
                          'same lengths.')
 
+    elist = extras
+    extras = extras is not None
     flags = flaglist is not None
     if flags:
         assert all(fMs == lenvec(flaglist))
@@ -176,16 +178,24 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None,
             addflag = mnp.rebin(wover, we, flaglist[i], 'or')
             mflags[overlap] = mflags[overlap] | addflag
 
+    if extras:
+        mextras = []
+        for method, values in elist:
+            mextras.append(stack_special(welist, values, method, commongrid=w))
+
     mdw = np.diff(w)
     mmask = (mweight == 0.0)
     good = np.logical_not(mmask)
     mflux[good] = mfluence[good]/mweight[good]/mdw[good]
     merr[good] = np.sqrt(mvar[good])/mweight[good]/mdw[good]
     mflux[mmask], merr[mmask] = np.nan, np.nan
+
+    result = [w, mflux, merr, mweight]
     if flags:
-        return w, mflux, merr, mweight, mflags
-    else:
-        return w, mflux, merr, mweight
+        result.append(mflags)
+    if extras:
+        result.append(mextras)
+    return result
 
 def common_grid(wavelist):
     """Generates a common wavelength grid from any number of provided grids
@@ -228,8 +238,7 @@ def common_grid(wavelist):
     return we
 
 
-def stack_special(wavelist, valuelist, function, commongrid=None,
-                  baseval=0):
+def stack_special(wavelist, valuelist, function, commongrid=None, baseval=None):
     """
     Rebin the values to a common wavelength grid and apply the function to
     compute the stacked result.
@@ -262,6 +271,9 @@ def stack_special(wavelist, valuelist, function, commongrid=None,
     stack : 1D array-like
         The min-stack of the values (length is one less than commongrid).
     """
+    default_bases = {'avg':0, 'sum':0, 'min':np.inf, 'max':-np.inf, 'or':0}
+    if baseval is None:
+        baseval = default_bases[function]
     w = common_grid(wavelist) if commongrid is None else commongrid
     iover, wover = zip(*[__woverlap(wi, w) for wi in wavelist])
     nullary = np.array([baseval]*(len(w)-1), np.result_type(*valuelist))
@@ -280,8 +292,11 @@ def stack_special(wavelist, valuelist, function, commongrid=None,
         return np.min(rebinlist, axis=0)
     elif function == 'max':
         return np.max(rebinlist, axis=0)
+    elif function == 'avg':
+        return np.mean(rebinlist, axis=0)
     else:
         return function(rebinlist, axis=0)
+
 
 def polyfit(wbins, y, order, err=None):
     """
@@ -328,6 +343,7 @@ def polyfit(wbins, y, order, err=None):
         return yy / dw, ee / dw
 
     return coeffs, covar, fitfunc
+
 
 def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
           contfit=4, plotspec=False, maxiter=1000, silent=False):
@@ -500,6 +516,22 @@ def adaptive_continuum(wbins, y, window, skew_test_pass=0.95, maxiter=1000):
 
     return np.hstack(cont_pieces)
 
+
+def gapsplit(wbins, other_vecs=None):
+    w0, w1 = wbins.T
+    gaps = (w0[1:] > w1[:-1])
+    isplit = list(np.nonzero(gaps)[0] + 1)
+    isplit.insert(0, 0)
+    isplit.append(None)
+    splits = zip(isplit[:-1], isplit[1:])
+    splitbins =  [wbins[i0:i1] for i0,i1 in splits]
+    if other_vecs is not None:
+        splitvecs = [[a[i0:i1] for i0,i1 in splits] for a in other_vecs]
+        return splitbins, splitvecs
+    else:
+        return splitbins
+
+
 def flags2ranges(wbins, flags):
     """
     Identifies and returns the start and end wavelengths for consecutive runs
@@ -513,10 +545,15 @@ def flags2ranges(wbins, flags):
         start and end wavelengths for the runs of each flag value in sorted
         order (i.e. np.unique(flags))
     """
+    splitbins, splitflags = gapsplit(wbins, [flags])
+    if len(splitbins) > 1:
+        rngslist = map(flags2ranges, splitbins, splitflags[0])
+        return np.vstack(rngslist)
     begs, ends = mnp.block_edges(flags)
     left = wbins[begs, 0]
     right = wbins[ends-1, 1]
     return np.vstack([left, right]).T
+
 
 def rebin(newedges, oldedges, flux, error, flags=None):
     """
@@ -527,8 +564,7 @@ def rebin(newedges, oldedges, flux, error, flags=None):
 
     Returns flux,error for the new grid.
     """
-    newedges, oldedges, flux, error = map(np.asarray,
-                                          [newedges, oldedges, flux, error])
+    newedges, oldedges, flux, error = map(np.asarray, [newedges, oldedges, flux, error])
 
     dwold = oldedges[1:] - oldedges[:-1]
     dwnew = newedges[1:] - newedges[:-1]
@@ -544,6 +580,7 @@ def rebin(newedges, oldedges, flux, error, flags=None):
         newflags = mnp.rebin(newedges, oldedges, flags, 'or')
         result.append(newflags)
     return result
+
 
 def plot(wbins, f, *args, **kwargs):
     """
@@ -596,6 +633,7 @@ def plot(wbins, f, *args, **kwargs):
 
     return p
 
+
 def color_flags(wbins, y, flags, *args, **kwargs):
     """
     Plot flagged spectral data with a different color for each flag.
@@ -639,6 +677,63 @@ def color_flags(wbins, y, flags, *args, **kwargs):
     plt.legend()
 
     return plts
+
+
+def wave_offset(wbinsa, fa, ea, wbinsb, fb, eb, offsets, cmp_range, return_logpdf=False):
+    """
+    Compute a best-fit wavelength offset between two spectra and give an approximate 1-sigma error
+
+    Parameters
+    ----------
+    wbinsa
+    fa
+    wbinsb
+    fb
+    offsets : 1d array
+        offsets to sample
+    cmp_range: 2-element array
+        range of speca over which to compare the spectra
+    return_pdf: True|False
+        if True, return the likelihood of each offset. I created this so I could average PDFs from the MUSCLES G130M
+        spectra to get a max-likelihood offset from all at once
+
+    Returns
+    -------
+    offset, error
+
+    """
+    offsets = np.asarray(offsets)
+
+    min_rng = [max(wbinsa[0], wbinsb[0] + offsets.max()), min(wbinsa[-1], wbinsb[-1] + offsets.min())]
+    if cmp_range[0] < min_rng[0] or cmp_range[-1] > min_rng[-1]:
+        raise ValueError('The spectra do not have sufficient span to cover cmp_range for all offsets.')
+
+    keepa = mnp.inranges(wbinsa, cmp_range, inclusive=[True, True])
+    ikeepa, = np.nonzero(keepa)
+    wbinsa = wbinsa[keepa]
+    fa, ea = [a[ikeepa[:-1]] for a in [fa, ea]]
+
+    def chi2(offset):
+        woffb = wbinsb + offset
+        _fb, _eb = rebin(wbinsa, woffb, fb, eb)
+        terms = (_fb - fa)**2/(ea**2 + _eb**2)
+        return np.sum(terms)
+
+    chis = np.array(map(chi2, offsets))
+    chis -= chis.min()
+    likes = np.exp(-chis)
+
+    if return_logpdf:
+        normfac = np.trapz(likes, offsets)
+        return -chis - np.log(normfac)
+
+    off, off0, off1 = pu.confidence_interval([offsets, likes], return_xpeak=True)
+
+    if abs ((off1 - off)/(off2 - off) - 1) > 0.5:
+        raise ValueError('Single 1-sigma error value is not a good approximation in this case.')
+
+    return off, np.mean([off1 - off, off - off0])
+
 
 def __woverlap(wa, wb):
     """Find the portion of wb that overlaps wa with no partial bins, then

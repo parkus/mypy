@@ -27,6 +27,15 @@ dashes = [[],
           [15] + [5, 3] + [5]]
 
 
+def step(*args, **kwargs):
+    edges, values = args[0], args[1]
+    edges = mnp.lace(edges[:-1], edges[1:])
+    values = mnp.lace(values, values)
+    args = list(args)
+    args[0], args[1] = edges, values
+    plt.plot(*args, **kwargs)
+
+
 def textSize(ax_or_fig=None, coordinate='data'):
     """
     Return x & y scale factors for converting text sizes in points to another coordinate. Useful for properly spacing

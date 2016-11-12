@@ -8,8 +8,8 @@ import numpy as np
 import warnings
 from crebin.rebin import rebin as crebin
 from my_numpy_bkwd import *
-from scipy.integrate import quad as _quad
 from astropy import constants as _const, units as _u
+from scipy.special import wofz
 
 #------------------------------------------------------------------------------
 # backwards compatability
@@ -58,12 +58,14 @@ range_intersect = rangeset_intersect
 
 def rangeset_invert(ranges):
     edges = ranges.ravel()
-    midrngs = edges[1:-1].reshape([-1, 2])
+    rnglist = [edges[1:-1].reshape([-1, 2])]
     if edges[0] != -np.inf:
         firstrng = [[-np.inf, edges[0]]]
+        rnglist.insert(0, firstrng)
     if edges[-1] != np.inf:
         lastrng = [[edges[-1], np.inf]]
-    return np.vstack([firstrng, midrngs, lastrng])
+        rnglist.append(lastrng)
+    return np.vstack(rnglist)
 
 
 def rangeset_union(ranges0, ranges1):
@@ -722,6 +724,14 @@ def intergolate(x_bin_edges,xin,yin):
 
     return yout
 
+
+def cumtrapz(y, x, zero_start=False):
+    result = np.cumsum(midpts(y)*np.diff(x))
+    if zero_start:
+        result = np.insert(result, 0, 0)
+    return result
+
+
 def rebin(newbins, oldbins, values, method='sum'):
     """
     Take binned data and rebin it using the specified method.
@@ -819,12 +829,16 @@ def flagruns(x):
     return flags
 
 
-def runslices(x):
+def runslices(x,endpts=False):
     """
     Return the slice indices that separate runs in x. Great for use with splitsum.
     """
     pospts = (x > 0)
-    return np.nonzero(pospts[1:] - pospts[:-1])[0] + 1
+    splits  = np.nonzero(pospts[1:] - pospts[:-1])[0] + 1
+    if endpts:
+        return np.insert(splits, [0, len(splits), [0, len(splits)]])
+    else:
+        return splits
 
 
 def chunks(l, n):
@@ -967,53 +981,54 @@ def voigt_xsection(w, w0, f, gamma, T, mass):
 
     nu = _const.c / w
     nu0 = _const.c / w0
-    sigma_dopp = np.sqrt(_const.k_B*T/mass)
-    phi = voigt_profile(nu, nu0, sigma_dopp, gamma)
+    sigma_dopp = np.sqrt(_const.k_B*T/mass/_const.c**2) * nu0
+    dnu = nu - nu0
+    gauss_sigma = sigma_dopp.to(_u.Hz).value
+    lorentz_FWHM = (gamma/2/np.pi).to(_u.Hz).value
+    phi = voigt(dnu.to(_u.Hz).value, gauss_sigma, lorentz_FWHM) * _u.s
     x = np.pi*_const.e.esu**2/_const.m_e/_const.c * f * phi
     return x.to('cm2')
 
 
-def voigt_profile(nu, nu0, sigma_dopp, gamma):
+def voigt(x, gauss_sigma, lorentz_FWHM):
     """
-    Compute the normalized Voigt profile values at w.
+    Return the Voigt line shape at x with Lorentzian component HWHM gamma
+    and Gaussian component HWHM alpha.
+
+    """
+    #FIXME replace with astropy version once version 1.1.2 is out
+
+    sigma = gauss_sigma
+    gamma = lorentz_FWHM/2.0
+    return np.real(wofz((x + 1j*gamma)/sigma/np.sqrt(2))) / sigma /np.sqrt(2*np.pi)
+
+
+def align(a, b):
+    """
+    Align two 1D arrays by maximizing the cross correlation.
 
     Parameters
     ----------
-    v : 1D array or scalar quantity
-        Locations to compute Voigt profile.
-    v0 : scalar quanitity
-        Center of  Voigt profile.
-    sigma_dopp: scalar quantity
-        Std dev of velocity gaussian sqrt(kT/M)
-    gamma: scalar quantity
-        Lorentzian scale parameter.
+    a
+    b
 
     Returns
     -------
-    phi : 1D array or scalar
-        Value of normalized Voigt function at each v.
+    offset
+        integer number of elements which b must be translated to maximize correlation with a, referenced from simply
+        starting both at index of 0 and cutting off the shorter.
+
+    Examples
+    --------
+    a = np.array([0, 0, 1, 0])
+    b = np.array([1, 0, 0, 0, 0])
+    offset = mnp.align(a,b)
 
     """
 
-    try:
-        nu[0]
-    except TypeError:
-        nu = _u.Quantity([nu])
-
-    #FIXME replace with astropy version once version 1.1.2 is out
-
-    sigma_dopp = sigma_dopp.to('km/s').value
-    c = _const.c.to('km/s').value
-    nu = nu.to('s-1').value
-    nu0 = nu0.to('s-1').value
-    gamma = gamma.to('s-1').value
-
-    phi = []
-    for _nu in nu:
-        integrand = lambda v: np.exp(-v**2/2/sigma_dopp**2)/sigma_dopp * \
-                              4*gamma/(16*np.pi**2*(_nu - (1 - v/c)*nu0)**2 + gamma**2)
-        val = _quad(integrand, -np.inf, np.inf, epsrel=0.001)[0] / np.sqrt(2*np.pi)
-        phi.append(val)
-
-    phi = np.array(phi) * _u.s
-    return phi.decompose()
+    # assume b is shorter than a
+    if len(b) <= len(a):
+        corr = np.correlate(a, b, 'full')
+        return np.argmax(corr) - len(b) + 1
+    else:
+        return -align(b, a)

@@ -9,6 +9,8 @@ import numpy as np
 from scipy.stats import shapiro, norm, skewtest
 from math import sqrt
 from mypy.my_numpy import splitsum
+from scipy.optimize import minimize as _minimize
+from scipy.integrate import quad as _quad
 
 def runstest(x, divider=None, passfail=False):
     """
@@ -336,6 +338,62 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000, p
             return good
         else:
             Nanom += 1
+
+
+def excess_noise_PDF(y, base_noise, Poisson=False):
+    """Computes the maximum likelihood value of the excess noise.
+
+    Specifically, this function assumes the data, y, are each drawn from a
+    normal distribution with the same mean but different variances. The
+    variance for the PDF from which a given point was drawn is given by
+    base_noise that may differ from point to point and some excess noise that
+    is the same for all points.
+
+    Modification History:
+    2014/05/12 - Created (only for Poisson=False case)
+    """
+
+    y, base_noise = np.array(y), np.array(base_noise)
+    ymn = np.mean(y)
+    yvar = np.var(y)
+    base_var = base_noise**2
+    x_guess = np.sqrt(yvar - np.mean(base_var)) if yvar > np.mean(base_var) else 0.0
+
+    def log_like(mn,x_noise,log_norm_fac):
+        x_var = x_noise**2
+        var = x_var + base_var
+        terms = -np.log(2*np.pi*var)/2 - (y - mn)**2/2/var
+        return np.sum(terms) + log_norm_fac
+
+    #initial pass at a normalization factor - use peak value
+    def neg_like(x):
+        mn,x_noise= x
+        return -log_like(mn,x_noise,0.0)
+    result = _minimize(neg_like, [ymn,x_guess], method='Nelder-Mead')
+    log_norm_fac = result.fun
+    mn_pk, x_noise_pk = result.x
+
+    def like(mn,x_noise):
+        return np.exp(log_like(mn, x_noise, log_norm_fac))
+
+    def xmn_like(xnorm):
+        constrained_like = lambda mn: like(mn, xnorm*mn)
+        result = _quad(constrained_like, mn_pk, np.inf)[0]
+        result += -_quad(constrained_like, mn_pk, 0.0)[0]
+        return result
+
+    xmn_pk = x_noise_pk/mn_pk
+    result = _minimize(lambda x: -xmn_like(x), xmn_pk, method='Nelder-Mead')
+    xmn_pk = result.x[0]
+    if xmn_pk < 0.0: xmn_pk = 0.0
+
+    area = _quad(xmn_like, xmn_pk, np.inf)[0]
+    area += -_quad(xmn_like, xmn_pk, 0.0)[0]
+
+    pdf = lambda x: xmn_like(x)/area if x >= 0.0 else 0.0
+
+    return pdf, xmn_pk
+
 
 def __run_deviations(x, metric):
     pospts = (x > 0)

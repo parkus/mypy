@@ -5,6 +5,7 @@ Created on Wed May 21 14:10:49 2014
 @author: Parke
 """
 import numpy as np
+import my_numpy as mnp
 from scipy.integrate import quad
 import scipy.special as ss
 import math
@@ -125,10 +126,11 @@ def upper_limit(pdf,confidence=0.95,normalized=False,x0=-np.inf,xpeak=None,
         print 'Bad input, see docstring.'
         return
 
-def confidence_interval(pdf,xpeak,confidence=0.683, normalized=False):
+def confidence_interval(pdf, xpeak=None, confidence=0.683, normalized=False, return_xpeak=False):
     """Find the endpoints enclosing a certain total probability prob for a pdf.    
     
-    Input pdf can be a list [x,p] containing x and p arrays sampling the pdf or
+    Input pdf can be a list [x,p] containing x and p arrays sampling the pdf, a list [xedges, p] for a histogram of
+    samples of the pdf (i.e. histogrammed MCMC output), or
     a function pdf that gives the probability density at x. xpeak is the point
     at which the peak of the pdf occurs (use scipy.optimize.minimize), required
     only when pdf is a function.
@@ -142,19 +144,22 @@ def confidence_interval(pdf,xpeak,confidence=0.683, normalized=False):
     integrations. I think, anyway.
     """
     
-    #set tolerance to one digit better precision than the specified confidence    
-    tol = 10**(-len(str(confidence))+1)
-    xtol = tol*xpeak
-    Itol = 10*xtol
+
     
     if hasattr(pdf, '__call__'): #see if it is a function
+        #set tolerance to one digit better precision than the specified confidence
+        tol = 10**(-len(str(confidence))+1)
+        xtol = tol*xpeak
+        Itol = 10*xtol
+
         pmax = pdf(xpeak)
         pguess = pmax*(1 - confidence)
         ptol = pmax*tol
         
         if not normalized:
             total = (-quad(pdf, xpeak, -np.inf)[0] + quad(pdf, xpeak, np.inf)[0])
-            pdf = lambda x: pdf(x)/total
+            _pdf = pdf
+            pdf = lambda x: _pdf(x)/total
         
         #use the fact that the pdf is normalized to guess at its width, then
         #use that to guess at the endpts
@@ -182,29 +187,42 @@ def confidence_interval(pdf,xpeak,confidence=0.683, normalized=False):
             x1 = gauss_findpt(pdf, xpeak, p, x1old, abstolx=xtol)
             
     elif type(pdf) is list:
+
         x,p = np.array(pdf[0]), np.array(pdf[1])
 
-        if not normalized: p = p/np.trapz(p,x)
-        imax = np.argmax(p)
-        pmax = p[imax]
-        
-        i0, i1 = imax, imax
-        I = 0.0
-        while I < confidence:
-            if p[i0-1] > p[i1+1]:
-                i0 -= 1
-                I += (p[i0] + p[i0+1])/2.0*(x[i0+1] - x[i0])
-            else: 
-                i1 +=1
-                I += (p[i1] + p[i1-1])/2.0*(x[i1] - x[i1-1])
-        
-        x0, x1 = x[i0], x[i1]
+        if len(x) == len(p):
+            if not normalized: p = p/np.trapz(p,x)
+            imax = np.argmax(p)
+            xpeak = x[imax]
+            I = mnp.cumtrapz(p, x)
+        elif len(x) == len(p) + 1:
+            dx = np.diff(x)
+            xmids = mnp.midpts(x)
+            xpeak = xmids[np.argmax(p)]
+            areas = dx*p
+            I = np.insert(np.cumsum(areas), 0, 0)
+        x0, x1 = _cdf_endpoints(x, I, confidence, xpeak)
+
     else:
         print 'Bad input -- read the docstring.'
         return
-    
-    return x0, x1  
+
+    if return_xpeak:
+        return xpeak, x0, x1
+    else:
+        return x0, x1
             
+
+def _cdf_endpoints(x, I, confidence, xpeak):
+    I = I/I[-1]
+    Ipk = np.interp(xpeak, x, I)
+    I0, I1 = Ipk - confidence/2.0, Ipk + confidence/2.0
+    if I0 < 0 or I1 > 1:
+        raise ValueError('PDF is highly asymmetric. Less than confidence/2. area of the PDF is to one or both sides '
+                         'of the peak, so normal confidence interval is ill-defined.')
+    x0, x1 = np.interp([I0, I1], I, x)
+    return x0, x1
+
 
 def gauss_findpt(fun, mu, fval, guess, abstolx=1e-6, maxiter=1e3):
     """Search for the point x where fun(x) = fval, assuming that fun is
