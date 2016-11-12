@@ -126,7 +126,7 @@ def upper_limit(pdf,confidence=0.95,normalized=False,x0=-np.inf,xpeak=None,
         print 'Bad input, see docstring.'
         return
 
-def confidence_interval(pdf, xpeak=None, confidence=0.683, normalized=False, return_xpeak=False):
+def confidence_interval(pdf, xpeak=None, confidence=0.683, normalized=False, return_xpeak=False, use_mean=False):
     """Find the endpoints enclosing a certain total probability prob for a pdf.    
     
     Input pdf can be a list [x,p] containing x and p arrays sampling the pdf, a list [xedges, p] for a histogram of
@@ -142,6 +142,11 @@ def confidence_interval(pdf, xpeak=None, confidence=0.683, normalized=False, ret
     The algorithm for when pdf is a function could be dramatically sped up by
     using the result of previous integrations to save time in computing future
     integrations. I think, anyway.
+
+    Parameters
+    ----------
+    use_mean :
+        If True, use mean rather than mode of pdf for xpeak.
     """
     
 
@@ -194,14 +199,17 @@ def confidence_interval(pdf, xpeak=None, confidence=0.683, normalized=False, ret
             if not normalized: p = p/np.trapz(p,x)
             imax = np.argmax(p)
             xpeak = x[imax]
-            I = mnp.cumtrapz(p, x)
+            I = mnp.cumtrapz(p, x, zero_start=True)
         elif len(x) == len(p) + 1:
             dx = np.diff(x)
             xmids = mnp.midpts(x)
             xpeak = xmids[np.argmax(p)]
             areas = dx*p
             I = np.insert(np.cumsum(areas), 0, 0)
-        x0, x1 = _cdf_endpoints(x, I, confidence, xpeak)
+        if use_mean:
+            x, x0, x1 = _cdf_endpoints(x, I, confidence, 'mean')
+        else:
+            x0, x1 = _cdf_endpoints(x, I, confidence, xpeak)
 
     else:
         print 'Bad input -- read the docstring.'
@@ -215,13 +223,20 @@ def confidence_interval(pdf, xpeak=None, confidence=0.683, normalized=False, ret
 
 def _cdf_endpoints(x, I, confidence, xpeak):
     I = I/I[-1]
-    Ipk = np.interp(xpeak, x, I)
+    if xpeak == 'mean':
+        Ipk = 0.5
+        xpk = np.interp(Ipk, I, x)
+    else:
+        Ipk = np.interp(xpeak, x, I)
     I0, I1 = Ipk - confidence/2.0, Ipk + confidence/2.0
     if I0 < 0 or I1 > 1:
         raise ValueError('PDF is highly asymmetric. Less than confidence/2. area of the PDF is to one or both sides '
                          'of the peak, so normal confidence interval is ill-defined.')
     x0, x1 = np.interp([I0, I1], I, x)
-    return x0, x1
+    if xpeak == 'mean':
+        return xpeak, x0, x1
+    else:
+        return x0, x1
 
 
 def gauss_findpt(fun, mu, fval, guess, abstolx=1e-6, maxiter=1e3):
