@@ -679,7 +679,7 @@ def color_flags(wbins, y, flags, *args, **kwargs):
     return plts
 
 
-def wave_offset(wbinsa, fa, ea, wbinsb, fb, eb, offsets, cmp_range, return_logpdf=False):
+def wave_offset(wbinsa, fa, ea, wbinsb, fb, eb, offsets, cmp_range, return_logpdf=False, return_error=True):
     """
     Compute a best-fit wavelength offset between two spectra and give an approximate 1-sigma error
 
@@ -696,6 +696,8 @@ def wave_offset(wbinsa, fa, ea, wbinsb, fb, eb, offsets, cmp_range, return_logpd
     return_pdf: True|False
         if True, return the likelihood of each offset. I created this so I could average PDFs from the MUSCLES G130M
         spectra to get a max-likelihood offset from all at once
+    return_error
+        obvious
 
     Returns
     -------
@@ -727,12 +729,15 @@ def wave_offset(wbinsa, fa, ea, wbinsb, fb, eb, offsets, cmp_range, return_logpd
         normfac = np.trapz(likes, offsets)
         return -chis - np.log(normfac)
 
-    off, off0, off1 = pu.confidence_interval([offsets, likes], return_xpeak=True)
+    if return_error:
+        off, off0, off1 = pu.confidence_interval([offsets, likes], return_xpeak=True, use_mean=use_mean)
+        e0, e1 = off - off0, off1 - off
+        e = (e0 + e1)/2.0
+        if (e1 - e0)/e > 1.0:
+            raise ValueError('Single 1-sigma error value is not a good approximation in this case.')
+        return off, e
 
-    if abs ((off1 - off)/(off2 - off) - 1) > 0.5:
-        raise ValueError('Single 1-sigma error value is not a good approximation in this case.')
-
-    return off, np.mean([off1 - off, off - off0])
+    return offsets[np.argmax(likes)]
 
 
 def __woverlap(wa, wb):
