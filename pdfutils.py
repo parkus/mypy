@@ -263,6 +263,7 @@ def gauss_findpt(fun, mu, fval, guess, abstolx=1e-6, maxiter=1e3):
         it += 1
     return xnew
 
+
 def optimal_grid(fun,x_max,Npts,to_level=(1e-5,1e-5),bounds=(-np.inf,np.inf)):
     """Generates a grid of points to optimally sample a function with a single
     peak at x_max. Created to sample PDFs.

@@ -6,7 +6,7 @@ Created on Thu Oct 23 10:46:02 2014
 """
 from numpy import median, sum, nan, array
 import numpy as np
-from scipy.stats import shapiro, norm, skewtest
+from scipy.stats import shapiro, norm, skewtest, poisson
 from math import sqrt
 from mypy.my_numpy import splitsum
 from scipy.optimize import minimize as _minimize
@@ -393,6 +393,34 @@ def excess_noise_PDF(y, base_noise, Poisson=False):
     pdf = lambda x: xmn_like(x)/area if x >= 0.0 else 0.0
 
     return pdf, xmn_pk
+
+
+def poisson_to_skewnorm(rate):
+    """
+    Approximate a poisson distribution of given rate with a skew normal distribution.
+
+    Parameters
+    ----------
+    rate
+        Rate for Poisson distribution. Must be > 1.0.
+
+    Returns
+    -------
+    a, loc, scale :
+        Parameters for use with scipy.stats.skewnorm. Note that the mean = loc + scale*delta*sqrt(2/pi); var =
+        scale**2*(1 - 2*delta**2/pi); skew = (4 - pi)/2 * (delta*sqrt(2/pi))**3/(1 - 2*delta**2/pi)**(3/2); where
+        delta = a/sqrt(1 + a**2)
+    """
+    if rate <= 1.0:
+        raise ValueError('Only defined for rate >= 1.0.')
+
+    mean, var, skew = poisson.stats(rate, moments='mvs')
+
+    delta = np.sqrt(np.pi/2*skew**(2./3)/(skew**(2./3) + ((4-np.pi)/2)**(2./3)))
+    a = delta/np.sqrt(1 - delta**2)
+    scale = np.sqrt(var/(1 - 2*delta**2/np.pi))
+    loc = mean - scale*delta*np.sqrt(2/np.pi)
+    return a, loc, scale
 
 
 def __run_deviations(x, metric):

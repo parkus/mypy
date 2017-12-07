@@ -36,6 +36,18 @@ def step(*args, **kwargs):
     plt.plot(*args, **kwargs)
 
 
+def point_along_line(x, y, frac, scale='linear'):
+    if scale == 'linear':
+        d = np.cumsum(np.sqrt(np.diff(x)**2 + np.diff(y)**2))
+        d = np.insert(d, 0, 0)
+        f = d/d[-1]
+        xp, yp = [np.interp(frac, f, a) for a in [x,y]]
+        return xp, yp
+    if scale == 'log':
+        lx, ly = point_along_line(np.log10(x), np.log10(y), frac, scale='linear')
+        return 10**lx, 10**ly
+
+
 def textSize(ax_or_fig=None, coordinate='data'):
     """
     Return x & y scale factors for converting text sizes in points to another coordinate. Useful for properly spacing
@@ -82,7 +94,7 @@ def textSize(ax_or_fig=None, coordinate='data'):
         return w_ax_data/w_ax_pts, h_ax_data/h_ax_pts
 
 
-def tight_axis_limits(ax=None, xory='both', margin=0.05, datalim=None):
+def tight_axis_limits(ax=None, xory='both', margin=0.05):
     if ax is None: ax = plt.gca()
 
     def newlim(oldlim):
@@ -105,16 +117,16 @@ def tight_axis_limits(ax=None, xory='both', margin=0.05, datalim=None):
         elif scale == 'log':
             return newlim_log(oldlim)
         elif scale == 'symlog':
-            print 'Past Parke to future Parke, you did\'t write an implementation for symlog scaled axes.'
-            return oldlim
+            raise NotImplementedError('Past Parke to future Parke, you did\'t write an implementation for symlog'
+                                      'scaled axes.')
 
     if xory == 'x' or xory == 'both':
-        if datalim is None: datalim = ax.dataLim.extents[[0,2]]
+        datalim = ax.dataLim.extents[[0,2]]
         axlim = ax.get_xlim()
         scale = ax.get_xscale()
         ax.set_xlim(newlim_either(datalim,axlim,scale))
     if xory == 'y' or xory == 'both':
-        if datalim is None: datalim = ax.dataLim.extents[[1,3]]
+        datalim = ax.dataLim.extents[[1,3]]
         axlim = ax.get_ylim()
         scale = ax.get_yscale()
         ax.set_ylim(newlim_either(datalim,axlim,scale))

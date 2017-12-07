@@ -34,6 +34,7 @@ def rangeset_intersect(ranges0, ranges1, presorted=False):
     if len(ranges0) == 0 or len(ranges1) == 0:
         return np.empty([0, 2])
     rng0, rng1 = map(np.asarray, [ranges0, ranges1])
+    rng0, rng1 = [np.reshape(a, [-1, 2]) for a in [rng0, rng1]]
 
     if not presorted:
         rng0, rng1 = [r[np.argsort(r[:,0])] for r in [rng0, rng1]]
@@ -502,6 +503,7 @@ def inranges(values, ranges, inclusive=[False, True]):
         b = (np.searchsorted(ranges, values, side='right') % 2 == 1)
         return (a & b)
 
+
 def binoverlap(binsa, binsb, method='tight'):
     """
     Returns the boolean indices of the bins in b tha overlap bins in a.
@@ -543,6 +545,7 @@ def binoverlap(binsa, binsb, method='tight'):
             result[ib[0]] = True
         return result
 
+
 def midpts(ary, axis=None):
     """Computes the midpoints between points in a vector.
 
@@ -556,7 +559,8 @@ def midpts(ary, axis=None):
         lo = np.split(ary, [-1], axis=axis)[0]
         return (hi+lo)/2.0
 
-def shorten_jumps(vec, maxjump, newjump=None):
+
+def shorten_jumps(x, maxjump, newjump=None, ignore_nans=True):
     """Finds jumps > maxjump in a vector of increasing values and shortens the
     jump to newjump.
 
@@ -566,15 +570,22 @@ def shorten_jumps(vec, maxjump, newjump=None):
     the midpoint of each new (shortened) jump, and the size of the original
     jumps.
     """
-    if not newjump: newjump = maxjump
-    vec = vec
-    jumps = np.concatenate(([0.0],vec[1:] - vec[:-1]))
+    if not newjump:
+        newjump = maxjump
+    if ignore_nans:
+        nans = np.isnan(x)
+        if np.any(nans):
+            i_nan, = np.nonzero(np.isnan(x))
+            x = np.delete(x, i_nan)
+    jumps = np.concatenate(([0.0], x[1:] - x[:-1]))
     jumpindex = np.nonzero(jumps > maxjump)[0]
     jumplen = jumps[jumpindex]
     jumps[jumpindex] = newjump
-    vec_new = jumps.cumsum()
-    midjump = (vec_new[jumpindex-1] + vec_new[jumpindex])/2.0
-    return vec_new, midjump, jumplen
+    x_new = jumps.cumsum()
+    midjump = (x_new[jumpindex-1] + x_new[jumpindex])/2.0
+    if ignore_nans and np.any(nans):
+        x_new = np.insert(x_new, i_nan - range(len(i_nan)), np.nan)
+    return x_new, midjump, jumplen
 
 
 def divvy(ary, bins, keyrow=0):
@@ -804,6 +815,36 @@ def rebin(newbins, oldbins, values, method='sum'):
     return nv.astype(dt)
 
 
+def interp_roots(x, y):
+    """
+    Find the roots of some data by linear interpolation where the y values cross the x-axis.
+
+    For series of zeros, the midpoint of the zero values is given.
+
+    Parameters
+    ----------
+    x : array
+    y : array
+
+    Returns
+    -------
+    x0 : array
+        x values of the roots
+    """
+    sign = np.sign(y)
+
+    # zero values where data crosses x axis
+    c = crossings = np.nonzero(abs(sign[1:] - sign[:-1]) == 2)[0] + 1
+    a = np.abs(y)
+    x0_crossings = (x[c]*a[c-1] + x[c-1]*a[c])/(a[c] + a[c-1])
+
+    # zero values where data falls on x axis
+    zero_start, zero_end = block_edges(y == 0)
+    x0_zero = (x[zero_start] + x[zero_end-1]) / 2.0
+
+    return np.unique(np.hstack([x0_crossings, x0_zero]))
+
+
 def corrcoef(x, y):
     """
     Compute the correlation coefficient between rows of x and y.
@@ -817,6 +858,7 @@ def corrcoef(x, y):
     Sxx = np.sum(x0*x0, 1)
     Syy = np.sum(y0*y0, 1)
     return Sxy/(np.sqrt(Sxx)*np.sqrt(Syy))
+
 
 def flagruns(x):
     """
@@ -833,8 +875,18 @@ def runslices(x,endpts=False):
     """
     Return the slice indices that separate runs in x. Great for use with splitsum.
     """
+    # first all indices where value crosses from positive to negative or vice versa
     pospts = (x > 0)
-    splits  = np.nonzero(pospts[1:] - pospts[:-1])[0] + 1
+    negpts = (x < 0)
+    arg_cross = np.nonzero((pospts[:-1] & negpts[1:]) | (negpts[:-1] & pospts[1:]))[0] + 1
+
+    # now all indices of the middle zero in all series of zeros
+    zeropts = (x == 0)
+    zero_beg, zero_end = block_edges(zeropts)
+    arg_zero = (zero_beg + zero_end + 1) // 2
+
+    insert_zeros_at = np.searchsorted(arg_cross, arg_zero)
+    splits = np.insert(arg_cross, insert_zeros_at, arg_zero)
     if endpts:
         return np.insert(splits, [0, len(splits), [0, len(splits)]])
     else:
