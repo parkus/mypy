@@ -27,25 +27,87 @@ dashes = [[],
           [15] + [5, 3] + [5]]
 
 
+def common_axes(fig, pos=None):
+    if pos is None:
+        bigax = fig.add_subplot(111)
+    else:
+        bigax = fig.add_axes(pos)
+    [bigax.spines[s].set_visible(False) for s in ['top', 'bottom', 'left', 'right']]
+    bigax.tick_params(labelleft=False, labelbottom=False, left='off', bottom='off')
+    bigax.set_zorder(-10)
+    return bigax
+
+
+def log_frac(x, frac):
+    l0, l1 = map(np.log10, x)
+    ld = l1 - l0
+    l = ld*frac + l0
+    return 10**l
+
+
+def log2linear(x, errneg=None, errpos=None):
+    xl = 10**x
+    result = [xl]
+    if errneg is not None:
+        xn = xl - 10**(x - np.abs(errneg))
+        result.append(xn)
+    if errpos is not None:
+        xp = 10**(x + errpos) - xl
+        result.append(xp)
+    return result
+
+
+def linear2log(x, errneg=None, errpos=None):
+    xl = np.log10(x)
+    result = [x]
+    if errneg is not None:
+        xn = xl - np.log10(x - np.abs(errneg))
+        result.append(xn)
+    if errpos is not None:
+        xp = np.log10(x + errpos) - xl
+        result.append(xp)
+    return result
+
+
 def step(*args, **kwargs):
     edges, values = args[0], args[1]
+
+    # deal with potentially gappy 2-column bin specifications
+    edges = np.asarray(edges)
+    if edges.ndim == 2:
+        if np.any(edges[1:,0] < edges[:-1,1]):
+            raise ValueError('Some bins overlap')
+        if np.any(edges[1:,0] < edges[:-1,0]):
+            raise ValueError('Bins must be in increasing order.')
+        gaps = edges[1:,0] > edges[:-1,1]
+        edges = np.unique(edges)
+        if np.any(gaps):
+            values = np.insert(values, np.nonzero(gaps), np.nan)
+
     edges = mnp.lace(edges[:-1], edges[1:])
     values = mnp.lace(values, values)
     args = list(args)
     args[0], args[1] = edges, values
-    plt.plot(*args, **kwargs)
+    return plt.plot(*args, **kwargs)
 
 
-def point_along_line(x, y, frac, scale='linear'):
-    if scale == 'linear':
-        d = np.cumsum(np.sqrt(np.diff(x)**2 + np.diff(y)**2))
-        d = np.insert(d, 0, 0)
-        f = d/d[-1]
-        xp, yp = [np.interp(frac, f, a) for a in [x,y]]
-        return xp, yp
+def point_along_line(x, y, xfrac=None, xlbl=None, scale='linear'):
     if scale == 'log':
-        lx, ly = point_along_line(np.log10(x), np.log10(y), frac, scale='linear')
-        return 10**lx, 10**ly
+        lx, ly = point_along_line(np.log10(x), np.log10(y), xfrac, xlbl, ylbl, scale)
+        return 10 ** lx, 10 ** ly
+    if xfrac is not None:
+        if xfrac == 0:
+            return x[0], y[0]
+        if xfrac == 1:
+            return x[-1], y[-1]
+        else:
+            d = np.cumsum(np.sqrt(np.diff(x)**2 + np.diff(y)**2))
+            d = np.insert(d, 0, 0)
+            f = d/d[-1]
+            xp, yp = [np.interp(xfrac, f, a) for a in [x,y]]
+            return xp, yp
+    if xlbl is not None:
+        return xlbl, np.interp(xlbl, x, y)
 
 
 def textSize(ax_or_fig=None, coordinate='data'):

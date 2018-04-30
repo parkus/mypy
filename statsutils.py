@@ -340,7 +340,7 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000, p
             Nanom += 1
 
 
-def excess_noise_PDF(y, base_noise, Poisson=False):
+def excess_noise(y, base_noise, Poisson=False, PDF=False, CDF=False):
     """Computes the maximum likelihood value of the excess noise.
 
     Specifically, this function assumes the data, y, are each drawn from a
@@ -390,8 +390,30 @@ def excess_noise_PDF(y, base_noise, Poisson=False):
     area = _quad(xmn_like, xmn_pk, np.inf)[0]
     area += -_quad(xmn_like, xmn_pk, 0.0)[0]
 
-    pdf = lambda x: xmn_like(x)/area if x >= 0.0 else 0.0
+    if PDF:
+        pdf = lambda x: xmn_like(x)/area if x >= 0.0 else 0.0
+    if CDF:
+        def cdf(x):
+            if x <= xmn_pk:
+                return -_quad(xmn_like, x, 0.0)[0]/area
+            else:
+                y = -_quad(xmn_like, xmn_pk, 0.0)[0]/area
+                y += _quad(xmn_like, xmn_pk, x)[0]/area
+                return y
 
+    if PDF and CDF:
+        return xmn_pk, pdf, cdf
+    elif PDF:
+        return xmn_pk, pdf
+    elif CDF:
+        return xmn_pk, cdf
+    else:
+        return xmn_pk
+
+
+# backward compatible
+def excess_noise_PDF(y, base_noise, Poisson=False):
+    xmn_pk, pdf = excess_noise(y, base_noise, Poisson=Poisson, PDF=True)
     return pdf, xmn_pk
 
 

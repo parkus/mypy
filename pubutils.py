@@ -3,6 +3,8 @@ import calendar
 from string import ascii_lowercase as alphabet
 import os
 import glob
+import numpy as np
+import json
 
 def _strip_braces(line):
     while line.endswith('}') and line.startswith('{'):
@@ -190,8 +192,48 @@ def _get_month(pair):
         if month_abbr is None:
             return -1
         else:
-            return _month_abbrs.index(month_abbr)
+            return _month_abbrs.index(month_abbr.lower())
 
 
+class Results(dict):
+    """Basic class to keep numerical results for a paper in one dictionary-like object that is automatically saved to
+     the disk when values are updated."""
+    dict_name = 'results_dictionary.json'
 
+    def __init__(self, path):
+        """Create an empty results object at the path indicated or load if the path already exists."""
+        self.dir = path
+        if os.path.exists(path):
+            with open(os.path.join(path, self.dict_name)) as f:
+                dic = json.load(f)
+            for key, value in dic.items():
+                self[key] = value
+        else:
+            os.mkdir(path)
 
+    def save_dict(self):
+        with open(os.path.join(self.dir, self.dict_name), 'w') as f:
+            json.dump(self, f)
+
+    def __setitem__(self, key, value):
+        if np.array(value).size > 3:
+            pathname = os.path.join(self.dir, key + '.npy')
+            np.save(pathname, np.array(value))
+            super(Results, self).__setitem__(key, pathname)
+        else:
+            super(Results, self).__setitem__(key, value)
+        self.save_dict()
+
+    def __getitem__(self, item):
+        value = super(Results, self).__getitem__(item)
+        if str(value) == value and os.path.exists(value):
+            return np.load(value)
+        else:
+            return value
+
+    def __delitem__(self, key):
+        value = super(Results, self).__getitem__(key)
+        if isinstance(value, basestring) and os.path.exists(value):
+            os.remove(value)
+        super(Results, self).__delitem__(key)
+        self.save_dict()

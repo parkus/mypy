@@ -10,6 +10,8 @@ from crebin.rebin import rebin as crebin
 from my_numpy_bkwd import *
 from astropy import constants as _const, units as _u
 from scipy.special import wofz
+import mpmath
+h, c, k_B = _const.h, _const.c, _const.k_B
 
 #------------------------------------------------------------------------------
 # backwards compatability
@@ -297,7 +299,7 @@ def lace(a, b, axis=0):
 
     return c
 
-def mids2edges(mids, start='mid', first='adjacent'):
+def mids2edges(mids, start='mid', first='adjacent', simple=False):
     """
     Reconstructs bin edges given only the midpoints.
 
@@ -339,6 +341,13 @@ def mids2edges(mids, start='mid', first='adjacent'):
 
     Could be accelerated with a cython implementation.
     """
+
+    if simple:
+        edges = midpts(mids)
+        d0 = edges[0] - mids[0]
+        d1 = mids[-1] - edges[-1]
+        return np.insert(edges, [0, len(edges)], [mids[0] - d0, mids[-1] + d1])
+
     mids = np.array(mids)
     N = len(mids)
     e = np.zeros(N+1)
@@ -1084,3 +1093,37 @@ def align(a, b):
         return np.argmax(corr) - len(b) + 1
     else:
         return -align(b, a)
+
+
+_Li = mpmath.fp.polylog
+def _P3(x):
+    e = np.exp(-x)
+    return _Li(4, e) + x*_Li(3, e) + x**2/2*_Li(2, e) + x**3/6*_Li(1, e)
+_P3 = np.vectorize(_P3)
+
+
+def blackbody_integral_cumulative(T, w):
+    """Integral of Planck function from 0 to w, computed analytically so it is fast. No extra factor of pi needed,
+    the integral from 0 to inf would equal stefan-boltzmann law. However, 0 and inf are not acceptable input."""
+    x = (h*c/w/k_B/T).to('').value
+    I = 12 * np.pi * (k_B*T)**4 / c**2 / h**3 * _P3(x)
+    return I.to('erg s-1 cm-2')
+planck_integral_cumulative = blackbody_integral_cumulative
+
+def blackbody(T, w):
+    "Planck function that will integrate to the same value as stefan-boltzmann. "
+    C = 2 * np.pi * _const.h * _const.c ** 2
+    eC = _const.h * _const.c / _const.k_B
+    exponent = (eC / T / w).to('').value
+    return (C / w ** 5 / (np.exp(exponent) - 1)).to('erg s-1 cm-2 AA-1')
+planck = blackbody
+
+
+def blackbody_integral(T, w0, w1):
+    """Integral of Planck function from w0 to  w1, computed analytically so it is fast. No extra factor of pi needed,
+    the integral from 0 to inf would equal stefan-boltzmann law. However, 0 and inf are not acceptable input."""
+    if w0 == 0:
+        return blackbody_integral_cumulative(T, w1)
+    w = [w0.value, w1.to(w0.unit).value]*w0.unit
+    return np.diff(blackbody_integral_cumulative(T, w))[0]
+planck_integral = blackbody_integral
