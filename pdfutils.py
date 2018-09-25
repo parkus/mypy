@@ -452,7 +452,7 @@ def mcmc_error_bars(x, x_ml=None, interval=0.683, limit=0.95, method='percentile
     if method == 'percentile':
         x50 = np.percentile(x, 50)
         dp = interval/2*100
-        return [x50] + (x50 - np.percentile(x, [50 + dp, 50 - dp])).tolist()
+        return [x50] + (np.percentile(x, [50 - dp, 50 + dp]) - x50).tolist()
     elif method == 'maxlike':
         x = np.sort(x)
         if x_ml is None:
