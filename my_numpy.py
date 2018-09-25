@@ -45,12 +45,11 @@ def rangeset_intersect(ranges0, ranges1, presorted=False):
 
     l0, r0 = rng0.T
     l1, r1 = rng1.T
-    f0, f1 = [rng.flatten() for rng in [rng0, rng1]]
 
-    lin0 = inranges(l0, f1, [1, 0])
-    rin0 = inranges(r0, f1, [0, 1])
-    lin1 = inranges(l1, f0, [0, 0])
-    rin1 = inranges(r1, f0, [0, 0])
+    lin0 = inranges(l0, rng1, [1, 0])
+    rin0 = inranges(r0, rng1, [0, 1])
+    lin1 = inranges(l1, rng0, [0, 0])
+    rin1 = inranges(r1, rng0, [0, 0])
 
     #keep only those edges that are within a good area of the other range
     l = weave(l0[lin0], l1[lin1])
@@ -60,6 +59,9 @@ range_intersect = rangeset_intersect
 
 
 def rangeset_invert(ranges):
+    if len(ranges) == 0:
+        return np.array([[-np.inf, np.inf]])
+    ranges = np.asarray(ranges)
     edges = ranges.ravel()
     rnglist = [edges[1:-1].reshape([-1, 2])]
     if edges[0] != -np.inf:
@@ -444,7 +446,7 @@ def block_edges(ary):
     chng = a[1:] - a[:-1]
     beg, = np.nonzero(chng == 1)
     end, = np.nonzero(chng == -1)
-    return beg,end
+    return beg, end
 
 
 def empty_arrays(N, dtype=float, shape=None):
@@ -590,11 +592,52 @@ def shorten_jumps(x, maxjump, newjump=None, ignore_nans=True):
     jumpindex = np.nonzero(jumps > maxjump)[0]
     jumplen = jumps[jumpindex]
     jumps[jumpindex] = newjump
-    x_new = jumps.cumsum()
+    x_new = jumps.cumsum() + x[0]
     midjump = (x_new[jumpindex-1] + x_new[jumpindex])/2.0
     if ignore_nans and np.any(nans):
         x_new = np.insert(x_new, i_nan - range(len(i_nan)), np.nan)
     return x_new, midjump, jumplen
+
+
+def fold(x, x_fold, dx_fold):
+    i_lim = np.searchsorted(x, x_fold)
+    i = np.arange(len(x))
+    add_bool = i[None, :] >= i_lim[:, None]
+    dx_vec = add_bool * dx_fold[:, None]
+    dx_vec = np.sum(dx_vec, 0)
+    return x - dx_vec
+
+
+def last_before(x, xlim):
+    before = x < xlim
+    if not np.any(before):
+        return None
+    return np.max(x[before])
+
+
+def arg_last_before(x, xlim):
+    before = x < xlim
+    if not np.any(before):
+        return None
+    imx = np.argmax(x[before])
+    i, = np.nonzero(before)
+    return i[imx]
+
+
+def first_after(x, xlim):
+    after = x > xlim
+    if not np.any(after):
+        return None
+    return np.min(x[after])
+
+
+def arg_first_after(x, xlim):
+    after = x > xlim
+    if not np.any(after):
+        return None
+    imn = np.argmin(x[after])
+    i, = np.nonzero(after)
+    return i[imn]
 
 
 def divvy(ary, bins, keyrow=0):
@@ -897,7 +940,7 @@ def runslices(x,endpts=False):
     insert_zeros_at = np.searchsorted(arg_cross, arg_zero)
     splits = np.insert(arg_cross, insert_zeros_at, arg_zero)
     if endpts:
-        return np.insert(splits, [0, len(splits), [0, len(splits)]])
+        return np.insert(splits, [0, len(splits), [0, len(x)]])
     else:
         return splits
 
@@ -1127,3 +1170,7 @@ def blackbody_integral(T, w0, w1):
     w = [w0.value, w1.to(w0.unit).value]*w0.unit
     return np.diff(blackbody_integral_cumulative(T, w))[0]
 planck_integral = blackbody_integral
+
+
+def ratio_err(num, enum, denom, edenom):
+    return num/denom * np.sqrt((enum/num)**2 + (edenom/denom)**2)

@@ -340,7 +340,7 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000, p
             Nanom += 1
 
 
-def excess_noise(y, base_noise, Poisson=False, PDF=False, CDF=False):
+def excess_noise(y, base_noise, Poisson=False, PDF=False, CDF=False, loglike=False):
     """Computes the maximum likelihood value of the excess noise.
 
     Specifically, this function assumes the data, y, are each drawn from a
@@ -364,6 +364,14 @@ def excess_noise(y, base_noise, Poisson=False, PDF=False, CDF=False):
         var = x_var + base_var
         terms = -np.log(2*np.pi*var)/2 - (y - mn)**2/2/var
         return np.sum(terms) + log_norm_fac
+    if loglike:
+        def log_like_for_min(params):
+            mn, x_noise = params
+            if x_noise < 0:
+                return -np.inf
+            else:
+                return log_like(mn, x_noise, 0)
+        return log_like_for_min
 
     #initial pass at a normalization factor - use peak value
     def neg_like(x):

@@ -237,3 +237,17 @@ class Results(dict):
             os.remove(value)
         super(Results, self).__delitem__(key)
         self.save_dict()
+
+
+def number_check(ms_path):
+    with open(ms_path) as f:
+        lines = f.readlines()
+    for i, line in enumerate(lines):
+        for m in re.finditer('([^a-zA-Z]*\\d+[^a-zA-Z]*)+', line):
+            i0 = m.start() - 20
+            if i0 < 0:
+                i0 = 0
+            i1 = m.end() + 20
+            snippet = line[i0:i1]
+            snippet = '{}: '.format(i) + snippet
+            print snippet

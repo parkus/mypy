@@ -88,7 +88,8 @@ def step(*args, **kwargs):
     values = mnp.lace(values, values)
     args = list(args)
     args[0], args[1] = edges, values
-    return plt.plot(*args, **kwargs)
+    ax = kwargs.pop('ax', plt.gca())
+    return ax.plot(*args, **kwargs)
 
 
 def point_along_line(x, y, xfrac=None, xlbl=None, scale='linear'):
