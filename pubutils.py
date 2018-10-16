@@ -5,6 +5,9 @@ import os
 import glob
 import numpy as np
 import json
+import datetime
+import warnings
+from scicatalog.export import _tex_fmt as tex_fmt
 
 def _strip_braces(line):
     while line.endswith('}') and line.startswith('{'):
@@ -207,29 +210,141 @@ class Results(dict):
             with open(os.path.join(path, self.dict_name)) as f:
                 dic = json.load(f)
             for key, value in dic.items():
-                self[key] = value
+                super(Results, self).__setitem__(key, value)
         else:
             os.mkdir(path)
+            self.save_dict()
 
     def save_dict(self):
         with open(os.path.join(self.dir, self.dict_name), 'w') as f:
             json.dump(self, f)
 
     def __setitem__(self, key, value):
+        warnings.warn('Dictionary-style setting uses default values for string export settings. '
+                      'Use set method if you want to customize the string representation of the value.')
+        self.set(key, value)
+
+    def upgrade_old_results(self):
+        for key in self.keys():
+            value = super(Results, self).__getitem__(key)
+            self.set(key, value, save=False)
+            self.save_dict()
+
+    def _make_entry(self, value, sigfigs=2, forceSN=False):
+        time_string = datetime.datetime.now().isoformat()
+        time_string = time_string.split('.')[0]
+        return dict(value=value, updated=time_string, sigfigs=sigfigs, forceSN=forceSN)
+
+    def set(self, key, value=None, sigfigs=2, force_sci_notation=False, save=True):
+        if value is None:
+            if key not in self:
+                raise ValueError('Must specify a value unless key is already in Results.')
+            else:
+                value = self[key]
         if np.array(value).size > 3:
             pathname = os.path.join(self.dir, key + '.npy')
             np.save(pathname, np.array(value))
-            super(Results, self).__setitem__(key, pathname)
-        else:
-            super(Results, self).__setitem__(key, value)
-        self.save_dict()
+            value = pathname
+        entry = self._make_entry(value, sigfigs=sigfigs, forceSN=force_sci_notation)
+        super(Results, self).__setitem__(key, entry)
+        if save:
+            self.save_dict()
+
+    def export_sty(self, keys=None, path='numbers.sty'):
+        """
+        Export a latex style file with the numbers as entries.
+
+        Each number is given a command based on the key used for it in the results dictionary. Non latex-allowed
+        characters are mapped as follows:
+            _ -> removed and next letter capitalized
+            number -> changed to roman numeral if < 100, else removed
+
+        Values that are length three lists are assumed to be values with
+        error bars and five separate latex macros are made accordingly
+            key = just the value
+            keyPosErr = positive error
+            keyNegErr = negative error
+            keyErr = average of positive and negative errors
+            keyTrip = value with error bars
+
+        Values are not printed in math mode, i.e. bracketing $ characters
+        are omitted and must be manually added if the value is printed in
+        scientific notation or with error bars.
+
+        Parameters
+        ----------
+        keys : keys for values to export, None exports all
+        path : path for the exported style file
+
+        Returns
+        -------
+        None
+        """
+        lines = []
+
+        def add_line(key, value, date=None):
+            line = '\\newcommand{{{}}}{{{}}}'.format(key, value)
+            if date:
+                line += ' % {}'.format(date)
+            lines.append(line)
+
+        for key in keys:
+            entry = self[key]
+            value = entry['value']
+            forceSN = entry['forceSN']
+            sigfigs = entry['sigfigs']
+            if hasattr(value, 'size') and value.size > 3:
+                print '{} skipped because value is an array.'.format(key)
+
+            # reformat key to be tex allowable
+            # get rid of underscores
+            tex_key = re.sub('_+', '_', key)
+            while True:
+                i = tex_key.find('_')
+                if i == -1:
+                    break
+                else:
+                    if i < len(tex_key) - 1:
+                        next_char = tex_key[i+1]
+                        tex_key = tex_key[:i] + next_char.upper() + tex_key[i+2:]
+
+            # replace numbers
+            match = re.findall('\d+', tex_key)
+            if match is not None:
+                for num in match:
+                    i = tex_key.find(num, 1)
+                    tex_key = tex_key[:i] + num2roman(int(num)) + tex_key[i+len(num):]
+
+            # get tex-formatted value
+            if forceSN:
+                fmt = '{{:.{}e}}'.format(sigfigs-1)
+            else:
+                fmt = '{{:.{}g}}'.format(sigfigs)
+            val_str = tex_fmt(value, None, None, sigfigs, fmt, forceSN)
+            add_line(tex_key, val_str, entry['updated'])
+            if len(value) == 3:
+                errneg = abs(value[1])
+                errpos = abs(value[2])
+                full_str = tex_fmt(value[0], errneg, errpos, sigfigs, fmt, forceSN)
+                add_line(tex_key + 'Trip', full_str)
+                efmt = '{{:.{}e}}'.format(sigfigs-1)
+                NegErr = tex_fmt(errneg, None, None, sigfigs, efmt)
+                PosErr = tex_fmt(errpos, None, None, sigfigs, efmt)
+                Err = tex_fmt((errneg + errpos) / 2, None, None, sigfigs, efmt)
+                add_line(tex_key + 'NegErr', NegErr)
+                add_line(tex_key + 'PosErr', PosErr)
+                add_line(tex_key + 'Err', Err)
+
+        with open(path, 'w') as f:
+            f.write('\n'.join(lines))
+
 
     def __getitem__(self, item):
-        value = super(Results, self).__getitem__(item)
-        if str(value) == value and os.path.exists(value):
-            return np.load(value)
-        else:
-            return value
+        entry = super(Results, self).__getitem__(item)
+        if str(entry['value']) == entry['value'] and os.path.exists(entry['value']):
+            ary = np.load(entry['value'])
+            entry['value'] = ary
+        return entry
 
     def __delitem__(self, key):
         value = super(Results, self).__getitem__(key)
