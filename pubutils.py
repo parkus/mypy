@@ -341,6 +341,7 @@ class Results(dict):
 
     def __getitem__(self, item):
         entry = super(Results, self).__getitem__(item)
+        entry = entry.copy()
         if str(entry['value']) == entry['value'] and os.path.exists(entry['value']):
             ary = np.load(entry['value'])
             entry['value'] = ary
