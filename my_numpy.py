@@ -475,7 +475,7 @@ def smooth(x, n, safe=True):
         return (s[n:] - s[:-n]) / float(n)
 
 
-def inranges(values, ranges, inclusive=[False, True]):
+def inranges(values, ranges, inclusive=(False, True)):
     """Determines whether values are in the supplied list of sorted ranges.
 
     Parameters
@@ -495,21 +495,22 @@ def inranges(values, ranges, inclusive=[False, True]):
 
     Returns a boolean array indexing the values that are in the ranges.
     """
+    inclusive = tuple(inclusive)
     ranges = np.asarray(ranges)
     if ranges.ndim == 2:
         if ranges.shape[1] != 2:
             ranges = ranges.T
         ranges = ranges.ravel()
 
-    if inclusive == [0, 1]:
+    if inclusive == (0, 1):
         return (np.searchsorted(ranges, values) % 2 == 1)
-    if inclusive == [1, 0]:
+    if inclusive == (1, 0):
         return (np.searchsorted(ranges, values, side='right') % 2 == 1)
-    if inclusive == [1, 1]:
+    if inclusive == (1, 1):
         a = (np.searchsorted(ranges, values) % 2 == 1)
         b = (np.searchsorted(ranges, values, side='right') % 2 == 1)
         return (a | b)
-    if inclusive == [0, 0]:
+    if inclusive == (0, 0):
         a = (np.searchsorted(ranges, values) % 2 == 1)
         b = (np.searchsorted(ranges, values, side='right') % 2 == 1)
         return (a & b)
