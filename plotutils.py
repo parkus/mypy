@@ -27,6 +27,25 @@ dashes = [[],
           [15] + [5, 3] + [5]]
 
 
+def click_coords(fig=None):
+    if fig is None:
+        fig = plt.gcf()
+
+    xy = []
+    def onclick(event):
+        if not event.inaxes:
+            fig.canvas.stop_event_loop()
+        else:
+            xy.append([event.xdata, event.ydata])
+
+    print "Gathering coordinates of mouse clicks. Click outside of the axes " \
+          "when done."
+    cid = fig.canvas.mpl_connect('button_press_event', onclick)
+    fig.canvas.start_event_loop(timeout=10.)
+    fig.canvas.mpl_disconnect(cid)
+    return xy
+
+
 def common_axes(fig, pos=None):
     if pos is None:
         bigax = fig.add_subplot(111)
@@ -215,6 +234,7 @@ def standard_figure(app, slideAR=1.6, height=1.0):
     mplot.rcParams.update({'font.size': fontsize})
     return fig, fontsize
 
+
 def pcolor_reg(x, y, z, **kw):
     """
     Similar to `pcolor`, but assume that the grid is uniform,
@@ -243,6 +263,7 @@ def pcolor_reg(x, y, z, **kw):
                **kw)
     plt.axis('tight')
 
+
 def errorpoly(x, y, yerr, fmt=None, ecolor=None, ealpha=0.5, ax=None, **kw):
     if ax is None: ax = plt.gca()
     p = ax.plot(x, y, **kw) if fmt is None else ax.plot(x, y, fmt, **kw)
@@ -268,6 +289,7 @@ def errorpoly(x, y, yerr, fmt=None, ecolor=None, ealpha=0.5, ax=None, **kw):
 
     f = ax.fill_between(x,ylo,yhi,color=ecolor,alpha=ealpha)
     return p[0],f
+
 
 def onscreen_pres(mpl, screenwidth=1200):
     """
