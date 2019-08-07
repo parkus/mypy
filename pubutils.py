@@ -15,6 +15,12 @@ def _strip_braces(line):
     return line
 
 
+def _strip_quotes(line):
+    while line.endswith('"') and line.startswith('"'):
+        line = line[1:-1]
+    return line
+
+
 class BibEntry(object):
     # technically, I should make this object immutable since I want it to be hashable, but I'm going to be lazy and
     # reckless and not do it
@@ -41,6 +47,7 @@ class BibEntry(object):
             return None
         line = match.group(1)
         line = _strip_braces(line)
+        line = _strip_quotes(line)
         line = re.sub('[ \n]+', ' ', line)
         return line
 
@@ -117,6 +124,8 @@ def mergeBibs(input_dir, savepath):
     paths = glob.glob(os.path.join(input_dir, '*.bbl'))
     paths += glob.glob(os.path.join(input_dir, '*.bib'))
     bibstr = ''
+    if len(paths) == 0:
+        raise ValueError("Ain't no .bib or .bbl files in that directory!")
     for path in paths:
         with open(path) as stream:
             bibstr += stream.read()
@@ -379,3 +388,8 @@ def num2roman(num):
                 roman += r
                 num -= i
     return roman
+
+
+def aastex_deluxetable_header(colnames):
+    pieces = ["\\colhead{{{}}}".format(cn) for cn in colnames]
+    return ' & '.join(pieces)

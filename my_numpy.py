@@ -1060,7 +1060,7 @@ def chi2normseries(x, xerr, y, yerr):
     return float(np.real(r))
 
 
-def voigt_xsection(w, w0, f, gamma, T, mass):
+def voigt_xsection(w, w0, f, gamma, T, mass, b=None):
     """
     Compute the absorption cross section using hte voigt profile for a line.
 
@@ -1076,8 +1076,11 @@ def voigt_xsection(w, w0, f, gamma, T, mass):
         Sum of transition rates (A values) out of upper and lower states. Just Aul for a resonance line where only
         spontaneous decay is an issue.
     T: quantity
-        Temperature of the gas.
-
+        Temperature of the gas. Can be None if you provide a b value instead.
+    mass: quantity
+        molecular mass of the gas
+    b : quantity
+        Doppler b value (in velocity units) of the line
     Returns
     -------
     x : quantity
@@ -1086,7 +1089,10 @@ def voigt_xsection(w, w0, f, gamma, T, mass):
 
     nu = _const.c / w
     nu0 = _const.c / w0
-    sigma_dopp = np.sqrt(_const.k_B*T/mass/_const.c**2) * nu0
+    if T is None:
+        sigma_dopp = b/_const.c*nu0/np.sqrt(2)
+    else:
+        sigma_dopp = np.sqrt(_const.k_B*T/mass/_const.c**2) * nu0
     dnu = nu - nu0
     gauss_sigma = sigma_dopp.to(_u.Hz).value
     lorentz_FWHM = (gamma/2/np.pi).to(_u.Hz).value
@@ -1175,3 +1181,7 @@ planck_integral = blackbody_integral
 
 def ratio_err(num, enum, denom, edenom):
     return num/denom * np.sqrt((enum/num)**2 + (edenom/denom)**2)
+
+
+def doppler_shift(w, velocity):
+    return (1 + velocity/_const.c)*w
