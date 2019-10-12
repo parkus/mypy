@@ -13,6 +13,8 @@ from .my_numpy_bkwd import *
 from astropy import constants as _const, units as _u
 from scipy.special import wofz
 import mpmath
+import inspect
+import functools
 h, c, k_B = _const.h, _const.c, _const.k_B
 
 #------------------------------------------------------------------------------
@@ -1187,3 +1189,78 @@ def ratio_err(num, enum, denom, edenom):
 
 def doppler_shift(w, velocity):
     return (1 + velocity/_const.c)*w
+
+def scalar_or_array(*names):
+    """
+    Decorator to make a function take either scalar or array input and return
+    either scalar or array accordingly.
+
+    The decorator accepts as arguments the names of all the parameters that
+    should  be turned into arrays if the user provides scalars. Names should
+    be strings.
+
+    The function must be able to handle array input for all of the named
+    arguments.
+
+    In  operation, if all the  named arguments are scalars, then the
+    decorator will apply np.squeeze() to everything the function returns.
+
+
+    Example:
+    @mnp.scalar_or_array('x', 'y')
+    def test(x, y):
+    x[x > 10] = 0
+        return x, y
+
+    test(5, 0)
+    # returns: (array(5), array(0))
+
+    test(20, 0)
+    # returns: (array(0), array(0))
+
+    test(np.arange(20), 0)
+    # returns: (array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  0,  0,
+                        0,  0,  0,  0,  0,  0]), array([0]))
+    # notice that the second value returned gets turned into an array in
+    # this case
+    """
+    def decorator(func):
+
+        # get the decorated functions call signature
+        signature = inspect.signature(func)
+
+        # now the modified version of the decorated function
+        @functools.wraps(func)
+        def mod(*args, **kwargs):
+            # map this modified function's arguments to that of the decorated
+            # function through the "bind" method of the signature
+            boundargs = signature.bind(*args, **kwargs)
+
+            # now check if each of the listed arguments is a scalar. if so,
+            # make it an array with ndim=1 in the bound arguments.
+            scalar_input = []
+            for name in names:
+                if name in signature.parameters:
+                    val = boundargs.arguments[name]
+                    if np.isscalar(val):
+                        scalar_input.append(True)
+                        ary = np.reshape(val, 1)
+                        boundargs.arguments[name] = ary
+                    else:
+                        scalar_input.append(False)
+
+            # now apply the function
+            result = func(**boundargs.arguments)
+
+            # if all the user-named inputs were scalars, then try to return
+            # all scalars, else, just return what the functon spit  out
+            if all(scalar_input):
+                if type(result) is tuple:
+                    return tuple(map(np.squeeze, result))
+                else:
+                    return np.squeeze(result)
+            else:
+                return result
+
+        return mod
+    return decorator
