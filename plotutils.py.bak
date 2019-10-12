@@ -5,7 +5,6 @@ Created on Fri May 30 17:15:27 2014
 @author: Parke
 """
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
 import matplotlib as mplot
 import matplotlib.pyplot as plt
@@ -39,8 +38,8 @@ def click_coords(fig=None):
         else:
             xy.append([event.xdata, event.ydata])
 
-    print("Gathering coordinates of mouse clicks. Click outside of the axes " \
-          "when done.")
+    print "Gathering coordinates of mouse clicks. Click outside of the axes " \
+          "when done."
     cid = fig.canvas.mpl_connect('button_press_event', onclick)
     fig.canvas.start_event_loop(timeout=10.)
     fig.canvas.mpl_disconnect(cid)
@@ -59,7 +58,7 @@ def common_axes(fig, pos=None):
 
 
 def log_frac(x, frac):
-    l0, l1 = list(map(np.log10, x))
+    l0, l1 = map(np.log10, x)
     ld = l1 - l0
     l = ld*frac + l0
     return 10**l
@@ -343,11 +342,11 @@ def stars3d(ra, dec, dist, T=5000.0, r=1.0, labels='', view=None, size=(800,800)
     n = len(ra)
     dec, ra = dec*np.pi/180.0, ra*np.pi/180.0
     makearr = lambda v: np.array([v] * n) if np.isscalar(v) else v
-    T, r, labels = list(map(makearr, (T, r, labels)))
+    T, r, labels = map(makearr, (T, r, labels))
 
     # add the sun
-    ra, dec, dist = list(map(np.append, (ra, dec, dist), (0.0, 0.0, 0.0)))
-    r, T, labels = list(map(np.append, (r, T, labels), (1.0, 5780.0, 'Sun')))
+    ra, dec, dist = map(np.append, (ra, dec, dist), (0.0, 0.0, 0.0))
+    r, T, labels = map(np.append, (r, T, labels), (1.0, 5780.0, 'Sun'))
 
     # get xyz coordinates
     z = dist * np.sin(dec)

@@ -4,12 +4,10 @@ Created on Wed Apr 30 11:43:52 2014
 
 @author: Parke
 """
-from __future__ import division, print_function, absolute_import
-
 import numpy as np
 import warnings
 from crebin.rebin import rebin as crebin
-from .my_numpy_bkwd import *
+from my_numpy_bkwd import *
 from astropy import constants as _const, units as _u
 from scipy.special import wofz
 import mpmath
@@ -37,7 +35,7 @@ def rangeset_intersect(ranges0, ranges1, presorted=False):
 
     if len(ranges0) == 0 or len(ranges1) == 0:
         return np.empty([0, 2])
-    rng0, rng1 = list(map(np.asarray, [ranges0, ranges1]))
+    rng0, rng1 = map(np.asarray, [ranges0, ranges1])
     rng0, rng1 = [np.reshape(a, [-1, 2]) for a in [rng0, rng1]]
 
     if not presorted:
@@ -76,7 +74,7 @@ def rangeset_invert(ranges):
 
 
 def rangeset_union(ranges0, ranges1):
-    invrng0, invrng1 = list(map(rangeset_invert, [ranges0, ranges1]))
+    invrng0, invrng1 = map(rangeset_invert, [ranges0, ranges1])
     xinv = range_intersect(invrng0, invrng1)
     return rangeset_invert(xinv)
 
@@ -160,7 +158,7 @@ def sliminterpN(pt, grids, datafunc):
 
     #get the data at the bracketing values, interpolated over the other grid
     #values
-    bktdata = list(map(idata, bkti))
+    bktdata = map(idata, bkti)
 
     #interpolate
     return bktdata[0]*fac0 + bktdata[1]*fac1
@@ -271,7 +269,7 @@ def lace(a, b, axis=0):
         the lace axis, which will be the sum of the lengths of the two input
         arrays along that axis.
     """
-    a, b = list(map(np.asarray, [a,b]))
+    a, b = map(np.asarray, [a,b])
 
     #prepare empty output array
     Na, Nb = a.shape[axis], b.shape[axis]
@@ -468,7 +466,7 @@ def smooth(x, n, safe=True):
     if safe:
         m = len(x)
         result = np.zeros(m - (n-1))
-        for i in range(n):
+        for i in xrange(n):
             result += x[i:(m-n+i+1)]
         return result / float(n)
     else:
@@ -539,7 +537,7 @@ def binoverlap(binsa, binsb, method='tight'):
         Boolean array where True values indicate overlapping bins.
         len(overlap) == len(binsb) - 1
     """
-    binsa, binsb = list(map(np.asarray, [binsa, binsb]))
+    binsa, binsb = map(np.asarray, [binsa, binsb])
     rng = binsa[[0,-1]]
     if binsb[0] >= rng[1] or binsb[-1] <= rng[0]:
         return np.zeros(len(binsb) - 1, bool)
@@ -547,11 +545,11 @@ def binoverlap(binsa, binsb, method='tight'):
     left, right = binsb[:-1], binsb[1:]
 
     if method == 'tight':
-        lin, rin = list(map(inranges, [left, right], [rng]*2, [[1,1]]*2))
+        lin, rin = map(inranges, [left, right], [rng]*2, [[1,1]]*2)
         return lin & rin
 
     if method == 'loose':
-        lin, rin = list(map(inranges, [left, right], [rng]*2, [[0,0]]*2))
+        lin, rin = map(inranges, [left, right], [rng]*2, [[0,0]]*2)
         result = lin | rin
         #if all of binsa is contained within a single bin in b
         ib = np.searchsorted(binsb, rng) - 1
@@ -598,7 +596,7 @@ def shorten_jumps(x, maxjump, newjump=None, ignore_nans=True):
     x_new = jumps.cumsum() + x[0]
     midjump = (x_new[jumpindex-1] + x_new[jumpindex])/2.0
     if ignore_nans and np.any(nans):
-        x_new = np.insert(x_new, i_nan - list(range(len(i_nan))), np.nan)
+        x_new = np.insert(x_new, i_nan - range(len(i_nan)), np.nan)
     return x_new, midjump, jumplen
 
 
@@ -698,7 +696,7 @@ def chunkogram(vec, chunksize, weights=None, unsorted=False):
     maxlen = len(v)//chunksize + 1
     edges, count = np.zeros(maxlen+1), np.zeros(maxlen)
     edges[0] = (v[0] + v[1])/2.0
-    i, iold, j = chunksize+1, 1, 0
+    i, iold, j = chunksize+1l, 1l, 0l
     while True: #TODO: use cython to make this fast
         #if the endpoint and following point have the same value
         while (i+1 < len(v)-1) and (v[i-1] == v[i]): i += 1
@@ -833,7 +831,7 @@ def rebin(newbins, oldbins, values, method='sum'):
         Rebinned data, len(newvalues) == len(newbins) - 1.
     """
     # vet input
-    nb, ob, ov = list(map(np.asarray, [newbins, oldbins, values], [float, float, None]))
+    nb, ob, ov = map(np.asarray, [newbins, oldbins, values], [float, float, None])
     dt = ov.dtype
     assert np.all(oldbins[1:] > oldbins[:-1])
     assert np.all(newbins[1:] > newbins[:-1])
@@ -846,7 +844,7 @@ def rebin(newbins, oldbins, values, method='sum'):
     if method in ['sum', 'min', 'max', 'or']:
         nv = crebin(nb, ob, ov, method)
     elif method == 'avg':
-        do, dn = list(map(np.diff, [ob, nb]))
+        do, dn = map(np.diff, [ob, nb])
         nv = crebin(nb, ob, ov*do, 'sum') / dn
 
     # otherwise, split up the array and apply the provided function
@@ -862,7 +860,7 @@ def rebin(newbins, oldbins, values, method='sum'):
         expanded = np.insert(values, inc, values[inc-1])
         ie = i + np.cumsum(noncoincident) - 1
 
-        nv = np.array(list(map(method, np.split(expanded, ie)[1:-1])))
+        nv = np.array(map(method, np.split(expanded, ie)[1:-1]))
     else:
         raise ValueError('Method not recognized.')
 
@@ -951,7 +949,7 @@ def runslices(x,endpts=False):
 def chunks(l, n):
     """ Yield successive n-sized chunks from l.
     """
-    for i in range(0, len(l), n):
+    for i in xrange(0, len(l), n):
         yield l[i:i+n]
 
 def polyfit_binned(bins, y, yerr, order):

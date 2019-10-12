@@ -22,7 +22,7 @@ def identify_continuum(wbins, y, err, function_generator, maxsig=2.0,
         raise ValueError('The shape of wbins must be [len(y), 2]. These '
                          'represent the edges of the wavelength bins over which '
                          'photons were counted (or flux was integrated).')
-    wbins, y, err = list(map(np.array, [wbins, y, err]))
+    wbins, y, err = map(np.array, [wbins, y, err])
     Npts = len(y)
     
     if plotsteps:

@@ -1,4 +1,3 @@
-from __future__ import division, print_function, absolute_import
 import re
 import calendar
 from string import ascii_lowercase as alphabet
@@ -169,7 +168,7 @@ def rekeyBib(entryList):
     keys = [entry.std_key() for entry in entryList]
 
     # zip and sort entries by the key
-    pairs = list(zip(entryList, keys))
+    pairs = zip(entryList, keys)
     sortkey = lambda pair: pair[1]
     pairs = sorted(pairs, key=sortkey)
 
@@ -195,7 +194,7 @@ def rekeyBib(entryList):
         replace = lambda match: '@{}{{{},'.format(match.group(1), key)
         entry.text = re.sub(r'@([A-Z]*)\{(.*),', replace, entry.text)
 
-    return list(zip(*pairs))[0]
+    return zip(*pairs)[0]
 
 
 _month_abbrs = [month.lower() for month in calendar.month_abbr]
@@ -219,7 +218,7 @@ class Results(dict):
         if os.path.exists(path):
             with open(os.path.join(path, self.dict_name)) as f:
                 dic = json.load(f)
-            for key, value in list(dic.items()):
+            for key, value in dic.items():
                 super(Results, self).__setitem__(key, value)
         else:
             os.mkdir(path)
@@ -235,7 +234,7 @@ class Results(dict):
         self.set(key, value)
 
     def upgrade_old_results(self):
-        for key in list(self.keys()):
+        for key in self.keys():
             value = super(Results, self).__getitem__(key)
             self.set(key, value, save=False)
             self.save_dict()
@@ -304,7 +303,7 @@ class Results(dict):
             forceSN = entry['forceSN']
             sigfigs = entry['sigfigs']
             if hasattr(value, 'size') and value.size > 3:
-                print('{} skipped because value is an array.'.format(key))
+                print '{} skipped because value is an array.'.format(key)
 
             # reformat key to be tex allowable
             # get rid of underscores
@@ -353,13 +352,13 @@ class Results(dict):
         entry = super(Results, self).__getitem__(item)
         entry = entry.copy()
         if str(entry['value']) == entry['value'] and os.path.exists(entry['value']):
-            ary = np.load(entry['value'], allow_pickle=True)
+            ary = np.load(entry['value'])
             entry['value'] = ary
         return entry
 
     def __delitem__(self, key):
         value = super(Results, self).__getitem__(key)
-        if isinstance(value, str) and os.path.exists(value):
+        if isinstance(value, basestring) and os.path.exists(value):
             os.remove(value)
         super(Results, self).__delitem__(key)
         self.save_dict()
@@ -376,7 +375,7 @@ def number_check(ms_path):
             i1 = m.end() + 20
             snippet = line[i0:i1]
             snippet = '{}: '.format(i) + snippet
-            print(snippet)
+            print snippet
 
 
 _num_map = [(1000, 'M'), (900, 'CM'), (500, 'D'), (400, 'CD'), (100, 'C'), (90, 'XC'),

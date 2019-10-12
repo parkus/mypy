@@ -4,7 +4,6 @@ Created on Thu Oct 23 10:46:02 2014
 
 @author: Parke
 """
-from __future__ import division, print_function, absolute_import
 from numpy import median, sum, nan, array
 import numpy as np
 from scipy.stats import shapiro, norm, skewtest, poisson
@@ -135,7 +134,7 @@ def runstest(x, divider=None, passfail=False):
                   [2,3,4,5,5,6,7,8,8,9,9,10,10,11,11,12,12,13,13],
                   [2,3,4,5,6,6,7,8,8,9,10,10,11,11,12,12,13,13,13],
                   [2,3,4,5,6,6,7,8,9,9,10,10,11,12,12,13,13,13,14]]
-            hi, lo = list(map(array, [hi, lo]))
+            hi, lo = map(array, [hi, lo])
             return (r > hi[n1,n2] or r < lo[n1,n2])
 
 def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000, printsteps=False):
@@ -275,9 +274,9 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000, p
     ## ITERATIVELY FIT AND FLAG ANOMALIES
     Nanom = 0
     if printsteps:
-        print('test value below {} needed to pass'.format(tol))
-        print('anomalies % bad test')
-        print('--------- ----- ---------')
+        print 'test value below {} needed to pass'.format(tol)
+        print 'anomalies % bad test'
+        print '--------- ----- ---------'
     while True:
         Ngood_rec = []
         counter = 0
@@ -334,7 +333,7 @@ def clean(x, tol, test='runs', metric='chi2', trendfit='median', maxiter=1000, p
             result = test(x1, good)
         if printsteps:
             pctbad = (1.0 - float(Ngood) / n) * 100.0
-            print('{:9.0f} {:5.2f} {}'.format(Nanom, pctbad, result))
+            print '{:9.0f} {:5.2f} {}'.format(Nanom, pctbad, result)
         if result < tol:
             return good
         else:
@@ -515,5 +514,5 @@ def draw_arbitrary(n, icdf):
     try:
         x = icdf(y)
     except ValueError:
-        x = list(map(icdf, y))
+        x = map(icdf, y)
     return x

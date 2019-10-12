@@ -5,15 +5,13 @@ Created on Wed Oct 22 12:51:23 2014
 @author: Parke
 """
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
-from . import my_numpy as mnp
-from . import statsutils as stats
-from . import pdfutils as pu
+import my_numpy as mnp
+import statsutils as stats
+import pdfutils as pu
 import matplotlib.pyplot as plt
-from .specutils_bkwd import *
+from specutils_bkwd import *
 from scipy.stats import skew
-from functools import reduce
 
 def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None, masklist=None, extras=None):
     """Coadds spectra of differing wavlength ranges and resolutions according
@@ -113,8 +111,8 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None, masklist=N
     if masklist is None:
         masklist = [np.zeros(flux.shape, bool) for flux in fluxlist]
 
-    lenvec = lambda lst: np.array(list(map(len, lst)))
-    wMs, fMs, feMs, mMs = list(map(lenvec, [wavelist, fluxlist, fluxerrlist, masklist]))
+    lenvec = lambda lst: np.array(map(len, lst))
+    wMs, fMs, feMs, mMs = map(lenvec, [wavelist, fluxlist, fluxerrlist, masklist])
     if any(fMs != feMs):
         raise ValueError('Corresponding flux and flux error vectors must be '
                          'the same lengths.')
@@ -151,7 +149,7 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None, masklist=N
     #construct common grid and get regions where this grid fully overlaps
     #the other grids (i.e. no partial bins)
     w = common_grid(welist)
-    overlist, woverlist = list(zip(*[__woverlap(wi, w) for wi in welist]))
+    overlist, woverlist = zip(*[__woverlap(wi, w) for wi in welist])
 
     #coadd the spectra (the m prefix stands for master)
     mfluence, mvar, mweight, mflux, merr = np.zeros([5, len(w)-1])
@@ -277,7 +275,7 @@ def stack_special(wavelist, valuelist, function, commongrid=None, baseval=None):
     if baseval is None:
         baseval = default_bases[function]
     w = common_grid(wavelist) if commongrid is None else commongrid
-    iover, wover = list(zip(*[__woverlap(wi, w) for wi in wavelist]))
+    iover, wover = zip(*[__woverlap(wi, w) for wi in wavelist])
     nullary = np.array([baseval]*(len(w)-1), np.result_type(*valuelist))
 
     rebinlist = []
@@ -413,7 +411,7 @@ def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
 
     if err is None:
         err = np.ones_like(y)
-    wbins, y, err = list(map(np.asarray, [wbins, y, err]))
+    wbins, y, err = map(np.asarray, [wbins, y, err])
     assert len(wbins) == len(y)
     assert wbins.shape[1] == 2
     assert method in ['area', 'skewness', 'skewtest']
@@ -478,7 +476,7 @@ def split(wbins, y, err=None, contcut=2.0, linecut=2.0, method='skewness',
 
 def adaptive_continuum(wbins, y, window, skew_test_pass=0.95, maxiter=1000):
 
-    wbins, y = list(map(np.asarray, [wbins, y]))
+    wbins, y = map(np.asarray, [wbins, y])
     assert len(wbins) == len(y)
     assert wbins.shape[1] == 2
     if y.ndim > 1 and y.shape[1] == 1: y = y.T
@@ -525,7 +523,7 @@ def gapsplit(wbins, other_vecs=None):
     isplit = list(np.nonzero(gaps)[0] + 1)
     isplit.insert(0, 0)
     isplit.append(None)
-    splits = list(zip(isplit[:-1], isplit[1:]))
+    splits = zip(isplit[:-1], isplit[1:])
     splitbins =  [wbins[i0:i1] for i0,i1 in splits]
     if other_vecs is not None:
         splitvecs = [[a[i0:i1] for i0,i1 in splits] for a in other_vecs]
@@ -549,7 +547,7 @@ def flags2ranges(wbins, flags):
     """
     splitbins, splitflags = gapsplit(wbins, [flags])
     if len(splitbins) > 1:
-        rngslist = list(map(flags2ranges, splitbins, splitflags[0]))
+        rngslist = map(flags2ranges, splitbins, splitflags[0])
         return np.vstack(rngslist)
     begs, ends = mnp.block_edges(flags)
     left = wbins[begs, 0]
@@ -566,7 +564,7 @@ def rebin(newedges, oldedges, flux, error, flags=None):
 
     Returns flux,error for the new grid.
     """
-    newedges, oldedges, flux, error = list(map(np.asarray, [newedges, oldedges, flux, error]))
+    newedges, oldedges, flux, error = map(np.asarray, [newedges, oldedges, flux, error])
 
     dwold = oldedges[1:] - oldedges[:-1]
     dwnew = newedges[1:] - newedges[:-1]
@@ -723,7 +721,7 @@ def wave_offset(wbinsa, fa, ea, wbinsb, fb, eb, offsets, cmp_range, return_logpd
         terms = (_fb - fa)**2/(ea**2 + _eb**2)
         return np.sum(terms)
 
-    chis = np.array(list(map(chi2, offsets)))
+    chis = np.array(map(chi2, offsets))
     chis -= chis.min()
     likes = np.exp(-chis)
 

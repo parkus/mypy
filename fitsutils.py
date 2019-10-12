@@ -4,6 +4,7 @@ Created on Fri Jun 13 15:33:34 2014
 
 @author: Parke
 """
+from __future__ import division, print_function, absolute_import
 
 from astropy.io import fits
 

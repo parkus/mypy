@@ -4,9 +4,8 @@ Created on Wed May 21 14:10:49 2014
 
 @author: Parke
 """
-from __future__ import division, print_function, absolute_import
 import numpy as np
-from . import my_numpy as mnp
+import my_numpy as mnp
 from scipy.integrate import quad
 import scipy.special as ss
 import math
@@ -124,7 +123,7 @@ def upper_limit(pdf,confidence=0.95,normalized=False,x0=-np.inf,xpeak=None,
         return x
         
     else:
-        print('Bad input, see docstring.')
+        print 'Bad input, see docstring.'
         return
 
 def confidence_interval(pdf, xpeak=None, confidence=0.683, normalized=False, return_xpeak=False, use_mean=False):
@@ -213,7 +212,7 @@ def confidence_interval(pdf, xpeak=None, confidence=0.683, normalized=False, ret
             x0, x1 = _cdf_endpoints(x, I, confidence, xpeak)
 
     else:
-        print('Bad input -- read the docstring.')
+        print 'Bad input -- read the docstring.'
         return
 
     if return_xpeak:
