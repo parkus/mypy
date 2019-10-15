@@ -1242,7 +1242,8 @@ def scalar_or_array(*names):
             for name in names:
                 if name in signature.parameters:
                     val = boundargs.arguments[name]
-                    if np.isscalar(val):
+                    if np.isscalar(val) or \
+                            (hasattr(val, 'isscalar') and val.isscalar):
                         scalar_input.append(True)
                         ary = np.reshape(val, 1)
                         boundargs.arguments[name] = ary
