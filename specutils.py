@@ -15,6 +15,7 @@ from .specutils_bkwd import *
 from scipy.stats import skew
 from functools import reduce
 
+
 def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None, masklist=None, extras=None):
     """Coadds spectra of differing wavlength ranges and resolutions according
     to the provided weight factors.
@@ -198,6 +199,7 @@ def coadd(wavelist, fluxlist, fluxerrlist, weightlist, flaglist=None, masklist=N
     if extras:
         result.append(mextras)
     return result
+
 
 def common_grid(wavelist):
     """Generates a common wavelength grid from any number of provided grids
