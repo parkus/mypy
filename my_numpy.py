@@ -744,7 +744,7 @@ def chunk_sum(vec, chunksize):
     sums = np.sum(arr, 1)
     return sums
 
-def intergolate(x_bin_edges,xin,yin):
+def intergolate(x_bin_edges,xin,yin, left=None, right=None):
     """Compute average of xin,yin within supplied bins.
 
     This funtion is similar to interpolation, but averages the curve repesented
@@ -757,40 +757,16 @@ def intergolate(x_bin_edges,xin,yin):
     often land between lines and predict no flux in a pixel where narrow but
     strong lines will actually produce significant flux.
 
-    Note that bins outside of xin will assume the curve is constant
-    at the value of its closest endpoint.
+    left and right have the same definition as in np.interp
     """
 
-    xbe = np.copy(x_bin_edges)
-
-    #if bins extend beyond the range of xin, add extra xin,yin points at the
-    #relevant end
-    if xbe[0] < xin[0]:
-        xin, yin = np.insert(xin,0,xbe[0]), np.insert(yin,0,yin[0])
-    if xbe[-1] > xin[-1]:
-        xin, yin = np.append(xin,xbe[-1]), np.append(yin,yin[-1])
-
-    #define variables to store the slice edges for points within each
-    #intergolation bin, exclusive
-    i0, i1 = 0, 0
-    yout = np.zeros(len(xbe)-1)
-    while xin[i0+1] <= xbe[0]: i0 += 1
-    for j in range(len(xbe)-1):
-        #find the index of the first point falling just left or on the edge
-        #of the bin
-        while xin[i1] < xbe[j+1]: i1 += 1
-            #TODO: fix the above
-
-        #inegrate xin,yin that fall in the current bin
-        xedges = np.hstack([[xbe[j]], xin[i0:i1], xbe[j+1]])
-        dx = xedges[1:] - xedges[:-1]
-        areas = dx*yin[i0:i1]
-        yout[j] = np.sum(areas)/(xbe[j+1] - xbe[j])
-
-        # update the point just inside of the left bin edge
-        i0 = i1
-
-    return yout
+    x = np.hstack((x_bin_edges, xin))
+    x = np.sort(x)
+    y = np.interp(x, xin, yin, left, right)
+    I = cumtrapz(y, x, True)
+    Iedges = np.interp(x_bin_edges, x, I)
+    y_bin_avg = np.diff(Iedges)/np.diff(x_bin_edges)
+    return y_bin_avg
 
 
 def cumtrapz(y, x, zero_start=False):
