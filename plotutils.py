@@ -28,7 +28,7 @@ dashes = [[],
           [15] + [5, 3] + [5]]
 
 
-def click_coords(fig=None):
+def click_coords(fig=None, timeout=600.):
     if fig is None:
         fig = plt.gcf()
 
@@ -42,7 +42,7 @@ def click_coords(fig=None):
     print("Gathering coordinates of mouse clicks. Click outside of the axes " \
           "when done.")
     cid = fig.canvas.mpl_connect('button_press_event', onclick)
-    fig.canvas.start_event_loop(timeout=10.)
+    fig.canvas.start_event_loop(timeout=timeout)
     fig.canvas.mpl_disconnect(cid)
     return np.array(xy)
 
@@ -360,7 +360,7 @@ def stars3d(ra, dec, dist, T=5000.0, r=1.0, labels='', view=None, size=(800,800)
 
     # plot lines down to the dec=0 plane for all but the sun
     lines = []
-    for x1, y1, z1 in zip(x, y, z)[:-1]:
+    for x1, y1, z1 in list(zip(x, y, z))[:-1]:
        xx, yy, zz = [x1, x1], [y1, y1], [0.0, z1]
        line = mlab.plot3d(xx, yy, zz, color=(0.7,0.7,0.7), line_width=0.5,
                           figure=fig)
