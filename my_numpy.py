@@ -1202,6 +1202,12 @@ def ratio_err(num, enum, denom, edenom):
 def doppler_shift(w, velocity):
     return (1 + velocity/_const.c)*w
 
+
+def w2v(w, w0):
+    v = (w - w0)/w0 * _const.c
+    return v.to('km/s')
+
+
 def scalar_or_array(*names):
     """
     Decorator to make a function take either scalar or array input and return
