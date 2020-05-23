@@ -1,4 +1,5 @@
 from astropy import units as u, constants as const
+from warnings import warn
 
 
 class Line(object):
@@ -11,16 +12,29 @@ class Line(object):
         self.label = label
         self.AASTex_label = AASTex_label
 
+    def __repr__(self):
+        return ('{} | w = {:.2f} | A = {:.1e} | f = {:.3f} | m = {:.1f}'
+                ''.format(self.label, self.w, self.A, self.f, self.m))
+
+    @property
+    def nu(self):
+        return (const.c/self.w).to('Hz')
+
 
 class Multiplet(object):
     def __init__(self, name, lines, label=None, AASTex_label=None):
-        self.name = name
-        self.label = label
-        self.lines = lines
-        self.AASTex_label = AASTex_label
+        # have to set params like this or setattr is infinite recursion loop
+        self.__dict__['name'] = name
+        self.__dict__['label'] = label
+        self.__dict__['lines'] = lines
+        self.__dict__['AASTex_label'] = AASTex_label
 
     def __getattr__(self, item):
-        return [getattr(line, item) for line in self.lines]
+        lst = [getattr(line, item) for line in self.lines]
+        if hasattr(lst[0], 'unit'):
+            unit = lst[0].unit
+            lst = [item.value for item in lst] * unit
+        return lst
 
     def __setattr__(self, key, value):
         if key == 'lines':
@@ -31,6 +45,31 @@ class Multiplet(object):
                     setattr(line, key, val)
         else:
             raise ValueError('Input could not be shaped to match lines.')
+
+    def __len__(self):
+        return len(self.lines)
+
+    def __iter__(self):
+        return iter(self.lines)
+
+    def __getitem__(self, item):
+        if type(item) is int:
+            return self.lines[item]
+        elif type(item) is slice:
+            return Multiplet(self.name, self.lines[item], self.label, self.AASTex_label)
+        else:
+            raise KeyError('Can only index lines with int or slice.')
+
+    def __repr__(self):
+        return '\n'.join([self.label] + ['-'*len(self.label)] +
+                         [repr(line) for line in self.lines])
+
+    def reduce(self):
+        warn('I do not know if this is how you combine a multiplet into a singlet. Check!!')
+        A = sum(self.A)
+        f = sum(self.f)
+        w = sum(self.f*self.w)/sum(self.f)
+        return Line(self.name, w, A, f, self.m[0], self.label, self.AASTex_label)
 
 
 c2 = Multiplet('c2', label='C II', AASTex_label='\ion{C}{2}',
@@ -66,7 +105,8 @@ n5 = Multiplet('n5', label='N V', AASTex_label='\ion{N}{5}',
                lines = (Line('n5a', 1238.821*u.AA, 3.40e+08*u.Hz, 1.56e-01, 14.0067*u.u),
                         Line('n5b', 1242.804*u.AA, 3.37e+08*u.Hz, 7.80e-02, 14.0067*u.u)))
 
-si3 = Line('si3', 1206.51*u.AA, 2.55e+09*u.Hz, 1.67e+00, 28.0855*u.u, label='Si III', AASTex_label='\ion{Si}{3}')
+si3 = Multiplet('si3', label='Si III', AASTex_label='\ion{Si}{3}',
+                lines = (Line('si3', 1206.51*u.AA, 2.55e+09*u.Hz, 1.67e+00, 28.0855*u.u),))
 
 si4 = Multiplet('si4', label='Si IV', AASTex_label='\ion{Si}{4}',
                 lines = (Line('si4a', 1393.755*u.AA, 8.80e+08*u.Hz, 5.13e-01, 28.0855*u.u),
