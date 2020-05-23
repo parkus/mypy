@@ -932,6 +932,7 @@ def chunks(l, n):
     for i in range(0, len(l), n):
         yield l[i:i+n]
 
+
 def polyfit_binned(bins, y, yerr, order):
     """Generates a function for the maximum likelihood fit to a set of binned
     data.
@@ -1012,6 +1013,7 @@ def polyfit_binned(bins, y, yerr, order):
 
     return c[::-1], cov[::-1,::-1], f
 
+
 def chi2normseries(x, xerr, y, yerr):
     """
     Find the normalization factor, c, to apply to y that minimizes the
@@ -1081,10 +1083,44 @@ def voigt_xsection(w, w0, f, gamma, T, mass, b=None):
     return x.to('cm2')
 
 
+def voigt_emission(w, w0, gamma, b):
+    """
+    Compute a voigt emission profile, normalized so that it will integrate to unity.
+
+    Parameters
+    ----------
+    w : astropy quantity array or scalar
+        Scalar or vector of wavelengths at which to compute cross section.
+    w0: quanitity
+        Line center wavelength.
+    gamma: quantity
+        Sum of transition rates (A values) out of upper and lower states. Just Aul for a resonance line where only
+        spontaneous decay is an issue.
+    b : quantity
+        Doppler b value (in velocity units) of the line
+    Returns
+    -------
+    x : quantity
+        Cross section of the line at each w.
+    """
+
+    nu = _const.c / w
+    nu0 = _const.c / w0
+    sigma_dopp = b/_const.c*nu0/np.sqrt(2)
+    dnu = nu - nu0
+    gauss_sigma = sigma_dopp.to(_u.Hz).value
+    lorentz_FWHM = (gamma/2/np.pi).to(_u.Hz).value
+    phi_nu = voigt(dnu.to(_u.Hz).value, gauss_sigma, lorentz_FWHM) * _u.s
+    phi_lam = phi_nu * (c/w**2)
+    return phi_lam.to(w.unit**-1)
+
+
 def voigt(x, gauss_sigma, lorentz_FWHM):
     """
     Return the Voigt line shape at x with Lorentzian component HWHM gamma
     and Gaussian component HWHM alpha.
+
+    Line function is normalized to integrate to unity.
 
     """
     #FIXME replace with astropy version once version 1.1.2 is out
@@ -1241,3 +1277,32 @@ def scalar_or_array(*names):
 
         return mod
     return decorator
+
+
+def polyerr(p, x, C):
+    """compute errors for polynomial values at x given a covariance matrix for the polynomial fit
+    This factors in the errors on the polynomial fit (and their correlation) when predicting values of the polynomial at x.
+
+    Example:
+    xpts = np.arange(10) + 0.5*np.random.randn(10)
+    ypts = 2*np.arange(10) + np.random.randn(10)
+    plt.plot(xpts, ypts, '.')
+    p, C = np.polyfit(xpts,ypts,1,cov=1)
+    x = np.linspace(-1, 10, 100)
+    y = np.polyval(p, x)
+    yerr = mnp.polyerr(p, x, C)
+    plt.fill_between(x, y-yerr, y+yerr)
+    """
+
+    # compute a list of transformation matrices -- one for each x
+    # these are the partial(y)/partial(p[i]) for each i of the polynomial
+    # i.e. you are taking the partial derivs with respect to the parameters
+
+    powers = np.arange(len(p))[::-1]
+    partials = x[:,None]**powers[None,:]
+
+    prod1 = np.inner(partials, C)
+    prod2 = np.sum(prod1*partials, 1)
+
+    return np.sqrt(prod2)
+
