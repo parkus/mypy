@@ -64,12 +64,19 @@ class Multiplet(object):
         return '\n'.join([self.label] + ['-'*len(self.label)] +
                          [repr(line) for line in self.lines])
 
-    def reduce(self):
-        warn('I do not know if this is how you combine a multiplet into a singlet. Check!!')
-        A = sum(self.A)
-        f = sum(self.f)
-        w = sum(self.f*self.w)/sum(self.f)
+    def crude_average(self):
+        # see emails to Jeremy darling about the combined Lya line
+        warn("I believe there is not a way to make multiple lines into a single "
+             "line that perfectly represents those lines. This is any approximation.")
+        A = sum(self.f*self.A)/sum(self.f) # the sum of two lorentzians is not a lorentzian, so this is a made up approximation
+        f = sum(self.f) # this I am confident in
+        w = sum(self.f*self.w)/sum(self.f) # I think this is reasonable
         return Line(self.name, w, A, f, self.m[0], self.label, self.AASTex_label)
+
+
+    def reduce(self):
+        warn(DeprecationWarning('Use crude_average now.'))
+        return crude_average()
 
 
 c2 = Multiplet('c2', label='C II', AASTex_label='\ion{C}{2}',
