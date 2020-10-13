@@ -11,7 +11,7 @@ import warnings
 from crebin.rebin import rebin as crebin
 from .my_numpy_bkwd import *
 from astropy import constants as _const, units as _u
-from scipy.special import wofz
+from scipy import special
 import mpmath
 import inspect
 import functools
@@ -1127,7 +1127,7 @@ def voigt(x, gauss_sigma, lorentz_FWHM):
 
     sigma = gauss_sigma
     gamma = lorentz_FWHM/2.0
-    return np.real(wofz((x + 1j*gamma)/sigma/np.sqrt(2))) / sigma /np.sqrt(2*np.pi)
+    return np.real(special.wofz((x + 1j*gamma)/sigma/np.sqrt(2))) / sigma /np.sqrt(2*np.pi)
 
 
 def align(a, b):
@@ -1312,3 +1312,10 @@ def polyerr(p, x, C):
 
     return np.sqrt(prod2)
 
+
+def apply_to_quantities(fun, output_unit, *args, **kwargs):
+    for i, arg in enumerate(args):
+        if isinstance(arg, _u.Quantity):
+            args[i] = arg.value
+        result = fun(*args, **kwargs)
+        return result * output_unit
