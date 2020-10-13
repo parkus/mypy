@@ -8,7 +8,7 @@ from __future__ import division, print_function, absolute_import
 from numpy import median, sum, nan, array
 import numpy as np
 from scipy.stats import shapiro, norm, skewtest, poisson
-from math import sqrt
+from math import sqrt, inf, pi
 from mypy.my_numpy import splitsum
 from scipy.optimize import minimize as _minimize
 from scipy.integrate import quad as _quad
@@ -517,3 +517,55 @@ def draw_arbitrary(n, icdf):
     except ValueError:
         x = list(map(icdf, y))
     return x
+
+
+def line_path_error_function(x, y, xerr, yerr, xa=-inf, xb=inf, samplefac=10):
+    """Compute the probability that the data points actually lie along a
+    line given the x and y value of the data point, the errors
+    on the data, and the line parameters. If desired, compute only for the
+    segment extending from xa to xb.
+
+    samplefac gives how many points per sigma. Will pick either x or y sigma to
+    determine this depending on the steepness of the line and size of the sigmas.
+    """
+
+    if xa == -inf:
+        xa = x - 5*xerr
+    if xb == inf:
+        xb = x + 5*xerr
+
+    # make both x and y grids to sample appropriately according to the steepness of the line
+    # e.g. for steep lines need to make sure there are enough y points to properly sample PDF
+    dx = xerr/samplefac
+    dy = yerr/samplefac
+    xgrid = np.arange(xa, xb + dx, dx)
+    ya = y - 5*yerr
+    yb = y + 5*yerr
+    ygrid = np.arange(ya, yb + dy, dy)
+
+    norm = lambda xx, yy: 1/2/pi/sqrt(xerr*yerr) * np.exp(-(xx - x)**2/2/xerr**2 - (yy - y)**2/2/yerr**2)
+
+    def path_errfunc(m, b):
+        mnorm = m * xerr / yerr
+        if abs(mnorm) > 1:
+            # line covers more ground in y than x relative to errors
+            # so invert and create a function using y as indep variable
+            # y = mx + b => x = (y - b)/m = 1/m*y - b/m
+            ya = m*xa + b
+            yb = m*xb + b
+            use = (ygrid > ya) & (ygrid < yb)
+            yy = ygrid[use]
+            xx = (yy - b)/m
+            ddx = dy/m
+            ddy = dy
+        else:
+            xx = xgrid
+            yy = m*xx + b
+            ddx = dx*m
+            ddy = dy
+
+        norms = norm(xx, yy)
+        ds = sqrt(ddx**2 + ddy**2)
+        return np.sum(norms*ds)
+
+    return path_errfunc
