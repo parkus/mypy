@@ -76,7 +76,7 @@ class Multiplet(object):
 
     def reduce(self):
         warn(DeprecationWarning('Use crude_average now.'))
-        return crude_average()
+        return self.crude_average()
 
 
 c2 = Multiplet('c2', label='C II', AASTex_label='\ion{C}{2}',
