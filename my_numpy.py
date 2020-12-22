@@ -1319,3 +1319,46 @@ def apply_to_quantities(fun, output_unit, *args, **kwargs):
             args[i] = arg.value
         result = fun(*args, **kwargs)
         return result * output_unit
+
+
+def interp_along_dim(x, xp, yp, axis=0):
+    """
+    Interpolate values in array yp assuming each subarray along the specified
+    axis gives values for a different function of the xp values.
+
+    Parameters
+    ----------
+    x
+    xp : must be presorted!
+    yp
+    axis
+
+    Returns
+    -------
+    array where the first dimension is len(x) and the remaining dimensions
+    are those of yp except the "axis" dimension
+
+    x values that are outside of the xp range will be given the value of xp at the endpoints
+
+    """
+
+    yp = np.moveaxis(yp, axis, 0)
+    new_dims = [len(x)] + list(yp.shape[1:])
+    result = np.zeros(new_dims)
+
+    i = np.searchsorted(xp, x)
+    left = (i == 0)
+    right = (i == len(xp))
+    between = ~(left | right)
+
+    if not np.all(between):
+        warnings.warn("interp_along_dim is interpolating some points beyond the range of the interpolation grid. Assigning values at the endpoints.")
+
+    bi, bx = i[between], x[between]
+    frac = (bx - xp[bi-1]) / (xp[bi] - xp[bi-1])
+    frac_array = np.outer(frac, np.ones(new_dims[1:]))
+    result[between,...] = yp[bi-1,...] + frac_array*(yp[bi,...] - yp[bi-1,...])
+
+    result[left,...] = yp[0,...]
+    result[right,...] = yp[-1,...]
+    return result
